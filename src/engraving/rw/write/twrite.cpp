@@ -60,6 +60,7 @@
 #include "../../libmscore/chordline.h"
 #include "../../libmscore/chordrest.h"
 #include "../../libmscore/clef.h"
+#include "../../libmscore/capo.h"
 
 #include "../../libmscore/drumset.h"
 #include "../../libmscore/dynamic.h"
@@ -116,6 +117,7 @@
 #include "../../libmscore/rehearsalmark.h"
 #include "../../libmscore/rest.h"
 
+#include "../../libmscore/sig.h"
 #include "../../libmscore/segment.h"
 #include "../../libmscore/slur.h"
 #include "../../libmscore/spacer.h"
@@ -138,7 +140,6 @@
 #include "../../libmscore/textbase.h"
 #include "../../libmscore/textline.h"
 #include "../../libmscore/textlinebase.h"
-#include "../../libmscore/chordtextlinebase.h"
 #include "../../libmscore/tie.h"
 #include "../../libmscore/timesig.h"
 #include "../../libmscore/tremolo.h"
@@ -162,7 +163,7 @@ using namespace mu::engraving::write;
 
 using WriteTypes = rtti::TypeList<Accidental, ActionIcon, Ambitus, Arpeggio, Articulation,
                                   BagpipeEmbellishment, BarLine, Beam, Bend, StretchedBend,  HBox, VBox, FBox, TBox, Bracket, Breath,
-                                  Chord, ChordLine, Clef,
+                                  Chord, ChordLine, Clef, Capo,
                                   Dynamic, Expression,
                                   Fermata, FiguredBass, Fingering, FretDiagram,
                                   Glissando, GradualTempoChange,
@@ -246,7 +247,7 @@ void TWrite::writeProperty(const EngravingItem* item, XmlWriter& xml, Pid pid)
         if (d.isValid() && std::abs(f1 - d.toReal()) < 0.0001) {            // fuzzy compare
             return;
         }
-        p = PropertyValue(Spatium::fromMM(f1, item->score()->spatium()));
+        p = PropertyValue(Spatium::fromMM(f1, item->style().spatium()));
         d = PropertyValue();
     } else if (P_TYPE::POINT == type) {
         PointF p1 = p.value<PointF>();
@@ -256,7 +257,7 @@ void TWrite::writeProperty(const EngravingItem* item, XmlWriter& xml, Pid pid)
                 return;
             }
         }
-        double q = item->offsetIsSpatiumDependent() ? item->score()->spatium() : DPMM;
+        double q = item->offsetIsSpatiumDependent() ? item->style().spatium() : DPMM;
         p = PropertyValue(p1 / q);
         d = PropertyValue();
     }
@@ -272,11 +273,11 @@ void TWrite::writeStyledProperties(const EngravingItem* item, XmlWriter& xml)
 
 void TWrite::writeItemProperties(const EngravingItem* item, XmlWriter& xml, WriteContext& ctx)
 {
-    bool autoplaceEnabled = item->score()->styleB(Sid::autoplaceEnabled);
+    bool autoplaceEnabled = item->score()->style().styleB(Sid::autoplaceEnabled);
     if (!autoplaceEnabled) {
-        item->score()->setStyleValue(Sid::autoplaceEnabled, true);
+        item->score()->style().set(Sid::autoplaceEnabled, true);
         writeProperty(item, xml, Pid::AUTOPLACE);
-        item->score()->setStyleValue(Sid::autoplaceEnabled, autoplaceEnabled);
+        item->score()->style().set(Sid::autoplaceEnabled, autoplaceEnabled);
     } else {
         writeProperty(item, xml, Pid::AUTOPLACE);
     }
@@ -338,14 +339,7 @@ void TWrite::writeItemProperties(const EngravingItem* item, XmlWriter& xml, Writ
     if (ctx.writePosition()) {
         xml.tagProperty(Pid::POSITION, item->rtick());
     }
-    if (item->tag() != 0x1) {
-        for (int i = 1; i < MAX_TAGS; i++) {
-            if (item->tag() == ((unsigned)1 << i)) {
-                xml.tag("tag", item->score()->layerTags()[i]);
-                break;
-            }
-        }
-    }
+
     for (Pid pid : { Pid::OFFSET, Pid::COLOR, Pid::VISIBLE, Pid::Z, Pid::PLACEMENT }) {
         if (item->propertyFlags(pid) == PropertyFlags::NOSTYLE) {
             writeProperty(item, xml, pid);
@@ -863,7 +857,10 @@ void TWrite::write(const ChordLine* item, XmlWriter& xml, WriteContext& ctx)
         xml.startElement("Path");
         for (size_t i = 0; i < n; ++i) {
             const PainterPath::Element& e = path.elementAt(i);
-            xml.tag("Element", { { "type", int(e.type) }, { "x", e.x }, { "y", e.y } });
+            double spatium = item->spatium();
+            double x = e.x / spatium;
+            double y = e.y / spatium;
+            xml.tag("Element", { { "type", int(e.type) }, { "x", x }, { "y", y } });
         }
         xml.endElement();
     }
@@ -884,6 +881,28 @@ void TWrite::write(const Clef* item, XmlWriter& xml, WriteContext& ctx)
         xml.tag("forInstrumentChange", item->forInstrumentChange());
     }
     writeItemProperties(item, xml, ctx);
+    xml.endElement();
+}
+
+void TWrite::write(const Capo* item, XmlWriter& xml, WriteContext& ctx)
+{
+    xml.startElement(item);
+    writeProperty(item, xml, Pid::ACTIVE);
+    writeProperty(item, xml, Pid::CAPO_FRET_POSITION);
+    writeProperty(item, xml, Pid::CAPO_GENERATE_TEXT);
+
+    std::set<string_idx_t> orderedStrings;
+    for (string_idx_t idx : item->params().ignoredStrings) {
+        orderedStrings.insert(idx);
+    }
+
+    for (string_idx_t idx : orderedStrings) {
+        xml.startElement("string", { { "no", idx } });
+        xml.tag("apply", false);
+        xml.endElement();
+    }
+
+    writeProperties(static_cast<const StaffTextBase*>(item), xml, ctx, true);
     xml.endElement();
 }
 
@@ -1273,7 +1292,7 @@ void TWrite::writeProperties(const SLine* item, XmlWriter& xml, WriteContext& ct
     //
     // write user modified layout and other segment properties
     //
-    double _spatium = item->score()->spatium();
+    double _spatium = item->style().spatium();
     for (const SpannerSegment* seg : item->spannerSegments()) {
         xml.startElement("Segment", seg);
         xml.tag("subtype", int(seg->spannerSegmentType()));
@@ -1372,8 +1391,8 @@ void TWrite::write(const Harmony* item, XmlWriter& xml, WriteContext& ctx)
             // parent can be a fret diagram
             Segment* segment = item->getParentSeg();
             Fraction tick = segment ? segment->tick() : Fraction(-1, 1);
-            const Interval& interval = item->part()->instrument(tick)->transpose();
-            if (ctx.clipboardmode() && !item->score()->styleB(Sid::concertPitch) && interval.chromatic) {
+            const Interval& interval = item->staff()->transpose(tick);
+            if (ctx.clipboardmode() && !item->score()->style().styleB(Sid::concertPitch) && interval.chromatic) {
                 rRootTpc = transposeTpc(item->rootTpc(), interval, true);
                 rBaseTpc = transposeTpc(item->baseTpc(), interval, true);
             }
@@ -1788,17 +1807,20 @@ void TWrite::write(const KeySig* item, XmlWriter& xml, WriteContext& ctx)
     writeItemProperties(item, xml, ctx);
     if (item->isAtonal()) {
         xml.tag("custom", 1);
-    } else if (item->isCustom()) {
-        xml.tag("accidental", int(item->key()));
-        xml.tag("custom", 1);
-        for (const CustDef& cd : item->customKeyDefs()) {
-            xml.startElement("CustDef");
-            xml.tag("sym", SymNames::nameForSymId(cd.sym));
-            xml.tag("def", { { "degree", cd.degree }, { "xAlt", cd.xAlt }, { "octAlt", cd.octAlt } });
-            xml.endElement();
-        }
     } else {
-        xml.tag("accidental", int(item->key()));
+        xml.tag("concertKey", int(item->concertKey()));
+        if (item->concertKey() != item->key()) {
+            xml.tag("actualKey", int(item->key()));
+        }
+        if (item->isCustom()) {
+            xml.tag("custom", 1);
+            for (const CustDef& cd : item->customKeyDefs()) {
+                xml.startElement("CustDef");
+                xml.tag("sym", SymNames::nameForSymId(cd.sym));
+                xml.tag("def", { { "degree", cd.degree }, { "xAlt", cd.xAlt }, { "octAlt", cd.octAlt } });
+                xml.endElement();
+            }
+        }
     }
 
     if (item->mode() != KeyMode::UNKNOWN) {
@@ -2077,8 +2099,22 @@ void TWrite::write(const Part* item, XmlWriter& xml, WriteContext& ctx)
         xml.tag("color", item->color());
     }
 
-    if (item->preferSharpFlat() != PreferSharpFlat::DEFAULT) {
-        xml.tag("preferSharpFlat", item->preferSharpFlat() == PreferSharpFlat::SHARPS ? "sharps" : "flats");
+    if (item->preferSharpFlat() != PreferSharpFlat::AUTO) {
+        switch (item->preferSharpFlat()) {
+        case PreferSharpFlat::AUTO:
+            break;
+        case PreferSharpFlat::FLATS:
+            xml.tag("preferSharpFlat", "flats");
+            break;
+        case PreferSharpFlat::SHARPS:
+            xml.tag("preferSharpFlat", "flats");
+            break;
+        case PreferSharpFlat::NONE:
+            xml.tag("preferSharpFlat", "none");
+            break;
+        default:
+            break;
+        }
     }
 
     write(item->instrument(), xml, ctx, item);
@@ -2095,9 +2131,6 @@ void TWrite::write(const Pedal* item, XmlWriter& xml, WriteContext& ctx)
 
     for (auto i : {
         Pid::END_HOOK_TYPE,
-        Pid::BEGIN_TEXT,
-        Pid::CONTINUE_TEXT,
-        Pid::END_TEXT,
         Pid::LINE_VISIBLE,
         Pid::BEGIN_HOOK_TYPE
     }) {
@@ -2222,7 +2255,7 @@ void TWrite::writeSlur(const SlurTieSegment* seg, XmlWriter& xml, WriteContext& 
 
     xml.startElement(seg, { { "no", no } });
 
-    double _spatium = seg->score()->spatium();
+    double _spatium = seg->style().spatium();
     if (!seg->ups(Grip::START).off.isNull()) {
         xml.tagPoint("o1", seg->ups(Grip::START).off / _spatium);
     }
@@ -2379,9 +2412,6 @@ void TWrite::write(const StaffTextBase* item, XmlWriter& xml, WriteContext& ctx)
         }
         int swingRatio = item->swingParameters().swingRatio;
         xml.tag("swing", { { "unit", TConv::toXml(swingUnit) }, { "ratio", swingRatio } });
-    }
-    if (item->capo() != 0) {
-        xml.tag("capo", { { "fretId", item->capo() } });
     }
     writeProperties(static_cast<const TextBase*>(item), xml, ctx, true);
 
@@ -2897,6 +2927,7 @@ void TWrite::writeSegments(XmlWriter& xml, WriteContext& ctx, track_idx_t strack
                         || (et == ElementType::SYSTEM_TEXT)
                         || (et == ElementType::TRIPLET_FEEL)
                         || (et == ElementType::PLAYTECH_ANNOTATION)
+                        || (et == ElementType::CAPO)
                         || (et == ElementType::JUMP)
                         || (et == ElementType::MARKER)
                         || (et == ElementType::TEMPO_TEXT)
@@ -2960,9 +2991,10 @@ void TWrite::writeSegments(XmlWriter& xml, WriteContext& ctx, track_idx_t strack
                 voiceTagWritten |= writeVoiceMove(xml, ctx, segment, startTick, track, &lastTrackWritten);
                 // we will miss a key sig!
                 if (!keySigWritten) {
-                    Key k = score->staff(track2staff(track))->key(segment->tick());
+                    Key ck = score->staff(track2staff(track))->concertKey(segment->tick());
+                    Key tk = score->staff(track2staff(track))->key(segment->tick());
                     KeySig* ks = Factory::createKeySig(score->dummy()->segment());
-                    ks->setKey(k);
+                    ks->setKey(ck, tk);
                     TWrite::write(ks, xml, ctx);
                     delete ks;
                     keySigWritten = true;

@@ -26,8 +26,6 @@
 
 #include "containers.h"
 
-#include "layout/v0/tlayout.h"
-
 #include "barline.h"
 #include "chord.h"
 #include "lyrics.h"
@@ -383,8 +381,7 @@ bool LineSegment::edit(EditData& ed)
     }
     triggerLayout();
     // recompute segment list, segment type may change
-    layout::v0::LayoutContext ctx(score());
-    layout::v0::TLayout::layout(l, ctx);
+    layout()->layoutItem(l);
 
     LineSegment* nls = 0;
     if (st == SpannerSegmentType::SINGLE) {
@@ -543,17 +540,16 @@ LineSegment* LineSegment::rebaseAnchor(Grip grip, Segment* newSeg)
     }
 
     if (newSeg->system() != oldSystem) {
-        layout::v0::LayoutContext ctx(score());
-        layout::v0::TLayout::layout(l, ctx);
+        layout()->layoutItem(l);
         return left ? l->frontSegment() : l->backSegment();
     } else if (anchorChanged) {
         const PointF delta = left ? deltaRebaseLeft(oldSeg, newSeg) : deltaRebaseRight(oldSeg, newSeg, track2staff(l->effectiveTrack2()));
         if (left) {
             setOffset(offset() + delta);
-            _offset2 -= delta;
+            m_offset2 -= delta;
             setOffsetChanged(true);
         } else {
-            _offset2 += delta;
+            m_offset2 += delta;
         }
     }
 
@@ -569,6 +565,15 @@ void LineSegment::rebaseAnchors(EditData& ed, Grip grip)
     if (line()->anchor() != Spanner::Anchor::SEGMENT) {
         return;
     }
+
+    if (isTrillSegment()) {
+        EngravingItem* startElement = spanner()->startElement();
+        if (startElement && startElement->isChord() && toChord(startElement)->staffMove() != 0) {
+            // This trill is on a cross-staff chord. Don't try to rebase its anchors when dragging.
+            return;
+        }
+    }
+
     // don't change anchors on keyboard adjustment or if Ctrl is pressed
     // (Ctrl+Left/Right is handled elsewhere!)
     if (ed.key == Key_Left || ed.key == Key_Right || ed.modifiers & ControlModifier) {
@@ -600,7 +605,7 @@ void LineSegment::rebaseAnchors(EditData& ed, Grip grip)
             if (newLineSegment != this) {
                 // Reset offset for the old line segment
                 if (left) {
-                    _offset2.rx() -= offset().x();
+                    m_offset2.rx() -= offset().x();
                     setOffset(PointF());
                 } else {
                     setUserOff2(PointF());
@@ -667,7 +672,7 @@ void LineSegment::editDrag(EditData& ed)
     switch (ed.curGrip) {
     case Grip::START:         // Resize the begin of element (left grip)
         setOffset(offset() + deltaResize);
-        _offset2 -= deltaResize;
+        m_offset2 -= deltaResize;
 
         if (isStyled(Pid::OFFSET)) {
             setPropertyFlags(Pid::OFFSET, PropertyFlags::UNSTYLED);
@@ -676,7 +681,7 @@ void LineSegment::editDrag(EditData& ed)
         rebaseAnchors(ed, ed.curGrip);
         break;
     case Grip::END:         // Resize the end of element (right grip)
-        _offset2 += deltaResize;
+        m_offset2 += deltaResize;
         rebaseAnchors(ed, ed.curGrip);
         break;
     case Grip::MIDDLE: {         // Move the element (middle grip)
@@ -709,7 +714,7 @@ void LineSegment::editDrag(EditData& ed)
                 if (sNote && sNote->chord() && noteNew->chord() && sNote->chord()->tick() < noteNew->chord()->tick()) {
                     score()->undoChangeSpannerElements(l, sNote, noteNew);
 
-                    _offset2 += noteOld->canvasPos() - noteNew->canvasPos();
+                    m_offset2 += noteOld->canvasPos() - noteNew->canvasPos();
                 }
             } else if (ed.curGrip == Grip::START && e != l->startElement()) {
                 LOGD("LineSegment: move start anchor (not impl.)");
@@ -728,7 +733,7 @@ void LineSegment::spatiumChanged(double ov, double nv)
     EngravingItem::spatiumChanged(ov, nv);
     double scale = nv / ov;
     line()->setLineWidth(line()->lineWidth() * scale);
-    _offset2 *= scale;
+    m_offset2 *= scale;
 }
 
 //---------------------------------------------------------
@@ -738,7 +743,7 @@ void LineSegment::spatiumChanged(double ov, double nv)
 void LineSegment::localSpatiumChanged(double ov, double nv)
 {
     EngravingItem::localSpatiumChanged(ov, nv);
-    _offset2 *= nv / ov;
+    m_offset2 *= nv / ov;
 }
 
 //---------------------------------------------------------
@@ -789,18 +794,18 @@ SLine::SLine(const ElementType& type, EngravingItem* parent, ElementFlags f)
     : Spanner(type, parent, f)
 {
     setTrack(0);
-    _lineWidth = 0.15 * spatium();
+    m_lineWidth = 0.15 * spatium();
 }
 
 SLine::SLine(const SLine& s)
     : Spanner(s)
 {
-    _diagonal    = s._diagonal;
-    _lineWidth   = s._lineWidth;
-    _lineColor   = s._lineColor;
-    _lineStyle   = s._lineStyle;
-    _dashLineLen = s._dashLineLen;
-    _dashGapLen  = s._dashGapLen;
+    m_diagonal    = s.m_diagonal;
+    m_lineWidth   = s.m_lineWidth;
+    m_lineColor   = s.m_lineColor;
+    m_lineStyle   = s.m_lineStyle;
+    m_dashLineLen = s.m_dashLineLen;
+    m_dashGapLen  = s.m_dashGapLen;
 }
 
 //---------------------------------------------------------
@@ -890,7 +895,7 @@ PointF SLine::linePos(Grip grip, System** sys) const
                         }
                     }
                 }
-            } else if (isLyricsLine() && toLyrics(explicitParent())->ticks() > Fraction(0, 1)) {
+            } else if (isLyricsLine() && explicitParent() && toLyrics(explicitParent())->ticks() > Fraction(0, 1)) {
                 // melisma line
                 // it is possible CR won't be in correct track
                 // prefer element in current track if available
@@ -908,7 +913,7 @@ PointF SLine::linePos(Grip grip, System** sys) const
                 if (cr && cr != toChordRest(startElement())) {
                     x = cr->rightEdge();
                 } else {
-                    x = spatium() - score()->styleMM(Sid::minNoteDistance);
+                    x = spatium() - style().styleMM(Sid::minNoteDistance);
                 }
             } else if (isHairpin() || isTrill() || isVibrato() || isTextLine() || isLyricsLine() || isGradualTempoChange()) {
                 // (for LYRICSLINE, this is hyphen; melisma line is handled above)
@@ -995,13 +1000,13 @@ PointF SLine::linePos(Grip grip, System** sys) const
                 }
             }
             x = m->pos().x() + offset;
-            if (score()->styleB(Sid::createMultiMeasureRests) && m->hasMMRest()) {
+            if (style().styleB(Sid::createMultiMeasureRests) && m->hasMMRest()) {
                 x = m->mmRest()->pos().x();
             }
         } else {
             double _spatium = spatium();
 
-            if (score()->styleB(Sid::createMultiMeasureRests)) {
+            if (style().styleB(Sid::createMultiMeasureRests)) {
                 // find the actual measure where the volta should stop
                 m = startMeasure();
                 if (m->hasMMRest()) {
@@ -1037,27 +1042,27 @@ PointF SLine::linePos(Grip grip, System** sys) const
                     case BarLineType::END_REPEAT:
                         // skip dots
                         x += symWidth(SymId::repeatDot);
-                        x += score()->styleS(Sid::endBarDistance).val() * _spatium;
+                        x += style().styleS(Sid::endBarDistance).val() * _spatium;
                     // fall through
                     case BarLineType::DOUBLE:
                         // center on leftmost (thinner) barline
-                        x += score()->styleS(Sid::doubleBarWidth).val() * _spatium * 0.5;
+                        x += style().styleS(Sid::doubleBarWidth).val() * _spatium * 0.5;
                         break;
                     case BarLineType::START_REPEAT:
                         // center on leftmost (thicker) barline
-                        x += score()->styleS(Sid::endBarWidth).val() * _spatium * 0.5;
+                        x += style().styleS(Sid::endBarWidth).val() * _spatium * 0.5;
                         break;
                     default:
                         // center on barline
-                        x += score()->styleS(Sid::barWidth).val() * _spatium * 0.5;
+                        x += style().styleS(Sid::barWidth).val() * _spatium * 0.5;
                         break;
                     }
                 }
             }
         }
-        if (score()->styleB(Sid::createMultiMeasureRests)) {
-            m = m->mmRest1();
-        }
+
+        m = m->coveringMMRestOrThis();
+
         assert(m->system());
         *sys = m->system();
     }
@@ -1091,82 +1096,6 @@ PointF SLine::linePos(Grip grip, System** sys) const
         break;
     }
     return PointF(x, 0.0);
-}
-
-//---------------------------------------------------------
-//   layoutSystem
-//    layout spannersegment for system
-//---------------------------------------------------------
-
-SpannerSegment* SLine::layoutSystem(System* system)
-{
-    Fraction stick = system->firstMeasure()->tick();
-    Fraction etick = system->lastMeasure()->endTick();
-
-    LineSegment* lineSegm = toLineSegment(getNextLayoutSystemSegment(system, [this](System* parent) { return createLineSegment(parent); }));
-
-    SpannerSegmentType sst;
-    if (tick() >= stick) {
-        //
-        // this is the first call to layoutSystem,
-        // processing the first line segment
-        //
-        computeStartElement();
-        computeEndElement();
-        sst = tick2() <= etick ? SpannerSegmentType::SINGLE : SpannerSegmentType::BEGIN;
-    } else if (tick() < stick && tick2() > etick) {
-        sst = SpannerSegmentType::MIDDLE;
-    } else {
-        //
-        // this is the last call to layoutSystem
-        // processing the last line segment
-        //
-        sst = SpannerSegmentType::END;
-    }
-    lineSegm->setSpannerSegmentType(sst);
-
-    switch (sst) {
-    case SpannerSegmentType::SINGLE: {
-        System* s;
-        PointF p1 = linePos(Grip::START, &s);
-        PointF p2 = linePos(Grip::END,   &s);
-        double len = p2.x() - p1.x();
-        lineSegm->setPos(p1);
-        lineSegm->setPos2(PointF(len, p2.y() - p1.y()));
-    }
-    break;
-    case SpannerSegmentType::BEGIN: {
-        System* s;
-        PointF p1 = linePos(Grip::START, &s);
-        lineSegm->setPos(p1);
-        double x2 = system->endingXForOpenEndedLines();
-        lineSegm->setPos2(PointF(x2 - p1.x(), 0.0));
-    }
-    break;
-    case SpannerSegmentType::MIDDLE: {
-        double x1 = system->firstNoteRestSegmentX(true);
-        double x2 = system->endingXForOpenEndedLines();
-        System* s;
-        PointF p1 = linePos(Grip::START, &s);
-        lineSegm->setPos(PointF(x1, p1.y()));
-        lineSegm->setPos2(PointF(x2 - x1, 0.0));
-    }
-    break;
-    case SpannerSegmentType::END: {
-        System* s;
-        PointF p2 = linePos(Grip::END,   &s);
-        double x1 = system->firstNoteRestSegmentX(true);
-        double len = p2.x() - x1;
-        lineSegm->setPos(PointF(p2.x() - len, p2.y()));
-        lineSegm->setPos2(PointF(len, 0.0));
-    }
-    break;
-    }
-
-    layout::v0::LayoutContext ctx(score());
-    layout::v0::TLayout::layout(lineSegm, ctx);
-
-    return lineSegm;
 }
 
 //---------------------------------------------------------
@@ -1207,13 +1136,13 @@ PropertyValue SLine::getProperty(Pid id) const
 {
     switch (id) {
     case Pid::DIAGONAL:
-        return _diagonal;
+        return m_diagonal;
     case Pid::COLOR:
-        return PropertyValue::fromValue(_lineColor);
+        return PropertyValue::fromValue(m_lineColor);
     case Pid::LINE_WIDTH:
-        return _lineWidth;
+        return m_lineWidth;
     case Pid::LINE_STYLE:
-        return _lineStyle;
+        return m_lineStyle;
     case Pid::DASH_LINE_LEN:
         return dashLineLen();
     case Pid::DASH_GAP_LEN:
@@ -1231,20 +1160,20 @@ bool SLine::setProperty(Pid id, const PropertyValue& v)
 {
     switch (id) {
     case Pid::DIAGONAL:
-        _diagonal = v.toBool();
+        m_diagonal = v.toBool();
         break;
     case Pid::COLOR:
-        _lineColor = v.value<mu::draw::Color>();
+        m_lineColor = v.value<mu::draw::Color>();
         break;
     case Pid::LINE_WIDTH:
         if (v.type() == P_TYPE::MILLIMETRE) {
-            _lineWidth = v.value<Millimetre>();
+            m_lineWidth = v.value<Millimetre>();
         } else if (v.type() == P_TYPE::SPATIUM) {
-            _lineWidth = v.value<Spatium>().toMM(spatium());
+            m_lineWidth = v.value<Spatium>().toMM(spatium());
         }
         break;
     case Pid::LINE_STYLE:
-        _lineStyle = v.value<LineType>();
+        m_lineStyle = v.value<LineType>();
         break;
     case Pid::DASH_LINE_LEN:
         setDashLineLen(v.toDouble());

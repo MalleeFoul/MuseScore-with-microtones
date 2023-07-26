@@ -314,17 +314,6 @@ void Excerpt::createExcerpt(Excerpt* excerpt)
     std::vector<Part*>& parts = excerpt->parts();
     std::vector<staff_idx_t> srcStaves;
 
-    // clone layer:
-    for (int i = 0; i < 32; ++i) {
-        score->layerTags()[i] = masterScore->layerTags()[i];
-        score->layerTagComments()[i] = masterScore->layerTagComments()[i];
-    }
-    score->setCurrentLayer(masterScore->currentLayer());
-    score->layer().clear();
-    for (const Layer& l : masterScore->layer()) {
-        score->layer().push_back(l);
-    }
-
     score->setPageNumberOffset(masterScore->pageNumberOffset());
 
     // Set instruments and create linked staves
@@ -333,6 +322,7 @@ void Excerpt::createExcerpt(Excerpt* excerpt)
         p->setId(part->id());
         p->setInstrument(*part->instrument());
         p->setPartName(part->partName());
+        p->setPreferSharpFlat(part->preferSharpFlat());
 
         for (Staff* staff : part->staves()) {
             Staff* s = Factory::createStaff(p);
@@ -391,7 +381,7 @@ void Excerpt::createExcerpt(Excerpt* excerpt)
     score->doLayout();
 
     // handle transposing instruments
-    if (masterScore->styleB(Sid::concertPitch) != score->styleB(Sid::concertPitch)) {
+    if (masterScore->style().styleB(Sid::concertPitch) != score->style().styleB(Sid::concertPitch)) {
         for (const Staff* staff : score->staves()) {
             if (staff->staffType(Fraction(0, 1))->group() == StaffGroup::PERCUSSION) {
                 continue;
@@ -403,7 +393,7 @@ void Excerpt::createExcerpt(Excerpt* excerpt)
                 continue;
             }
             bool flip = false;
-            if (masterScore->styleB(Sid::concertPitch)) {
+            if (masterScore->style().styleB(Sid::concertPitch)) {
                 interval.flip();          // flip the transposition for the original instrument
                 flip = true;              // transposeKeys() will flip transposition for each instrument change
             }
@@ -416,15 +406,15 @@ void Excerpt::createExcerpt(Excerpt* excerpt)
             if (score->lastSegment()) {
                 endTick = score->lastSegment()->tick();
             }
-            score->transposeKeys(staffIdx, staffIdx + 1, Fraction(0, 1), endTick, interval, true, flip);
+            score->transposeKeys(staffIdx, staffIdx + 1, Fraction(0, 1), endTick, flip);
 
             for (auto segment = score->firstSegmentMM(SegmentType::ChordRest); segment;
                  segment = segment->next1MM(SegmentType::ChordRest)) {
-                interval = staff->part()->instrument(segment->tick())->transpose();
+                interval = staff->transpose(segment->tick());
                 if (interval.isZero()) {
                     continue;
                 }
-                if (masterScore->styleB(Sid::concertPitch)) {
+                if (masterScore->style().styleB(Sid::concertPitch)) {
                     interval.flip();
                 }
 
@@ -452,8 +442,8 @@ void Excerpt::createExcerpt(Excerpt* excerpt)
     }
 
     // update style values if spatium different for part
-    if (masterScore->spatium() != score->spatium()) {
-        score->spatiumChanged(masterScore->spatium(), score->spatium());
+    if (masterScore->style().spatium() != score->style().spatium()) {
+        score->spatiumChanged(masterScore->style().spatium(), score->style().spatium());
         score->styleChanged();
     }
 
@@ -667,6 +657,8 @@ void Excerpt::cloneSpanner(Spanner* s, Score* score, track_idx_t dstTrack, track
         if (!ns->endElement()) {
             LOGD("clone Slur: no end element");
         }
+    } else if (ns->isTrill()) {
+        ns->computeStartElement();
     }
 
     if (!ns->startElement() || !ns->endElement()) {
@@ -1211,6 +1203,7 @@ void Excerpt::cloneStaff(Staff* srcStaff, Staff* dstStaff, bool cloneSpanners)
                         case ElementType::SYSTEM_TEXT:
                         case ElementType::TRIPLET_FEEL:
                         case ElementType::PLAYTECH_ANNOTATION:
+                        case ElementType::CAPO:
                         case ElementType::FRET_DIAGRAM:
                         case ElementType::HARMONY:
                         case ElementType::FIGURED_BASS:
@@ -1549,8 +1542,8 @@ void Excerpt::cloneStaff2(Staff* srcStaff, Staff* dstStaff, const Fraction& star
         cloneSpanner(s, score, dstTrack, dstTrack2);
     }
 
-    bool oscoreConcertPitch = oscore->styleB(Sid::concertPitch);
-    bool scoreConcertPitch = score->styleB(Sid::concertPitch);
+    bool oscoreConcertPitch = oscore->style().styleB(Sid::concertPitch);
+    bool scoreConcertPitch = score->style().styleB(Sid::concertPitch);
 
     if ((oscoreConcertPitch && !scoreConcertPitch)
         || (!oscoreConcertPitch && scoreConcertPitch)) {
@@ -1563,7 +1556,7 @@ void Excerpt::cloneStaff2(Staff* srcStaff, Staff* dstStaff, const Fraction& star
             interval.flip();
         }
 
-        score->transposeKeys(dstStaffIdx, dstStaffIdx + 1, startTick, endTick, interval, true, !scoreConcertPitch);
+        score->transposeKeys(dstStaffIdx, dstStaffIdx + 1, startTick, endTick, !scoreConcertPitch);
     }
 }
 

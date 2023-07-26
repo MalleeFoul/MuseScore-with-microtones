@@ -208,6 +208,13 @@ static void playNote(EventMap* events, const Note* note, PlayNoteParams params, 
     if (params.offTime > 0 && params.offTime < params.onTime) {
         return;
     }
+    // We need to set Pitch Value to initial in case previous note was with bendUp
+    if (params.onTime - params.offset - 1 > 0) {
+        PitchWheelSpecs specs;
+        NPlayEvent pwReset(ME_PITCHBEND, params.channel, specs.mLimit % 128, specs.mLimit / 128);
+        events->insert(std::pair<int, NPlayEvent>(std::max(0, params.onTime - params.offset - 1), pwReset));
+    }
+
     events->insert(std::pair<int, NPlayEvent>(std::max(0, params.onTime - params.offset), ev));
     // adds portamento for continuous glissando
     for (Spanner* spanner : note->spannerFor()) {
@@ -1191,6 +1198,7 @@ uint32_t MidiRenderer::getChannel(const Instrument* instr, const Note* note, Mid
 
     if (_context.eachStringHasChannel && instr->hasStrings()) {
         lookupData.string = note->string();
+        lookupData.staffIdx = note->staffIdx();
     }
 
     return _context.channels->getChannel(channel, lookupData);
@@ -1211,6 +1219,6 @@ uint32_t MidiRenderer::ChannelLookup::getChannel(uint32_t instrumentChannel, con
 
 bool MidiRenderer::ChannelLookup::LookupData::operator<(const MidiRenderer::ChannelLookup::LookupData& other) const
 {
-    return std::tie(string, effect) < std::tie(other.string, other.effect);
+    return std::tie(string, staffIdx, effect) < std::tie(other.string, other.staffIdx, other.effect);
 }
 }

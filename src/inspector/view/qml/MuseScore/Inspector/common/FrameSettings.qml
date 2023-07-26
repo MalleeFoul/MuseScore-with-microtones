@@ -35,6 +35,7 @@ Column {
     property string navigationName: "FrameSettings"
     property NavigationPanel navigationPanel: null
     property int navigationRowStart: 0
+    readonly property int navigationRowEnd: cornerRadiusSection.navigationRowEnd
 
     required property QtObject frameTypePropertyItem
     required property QtObject frameBorderColorPropertyItem
@@ -129,14 +130,14 @@ Column {
             anchors.leftMargin: 2
             anchors.right: parent.right
 
-            navigationName: "Margin"
+            navigationName: "Padding"
             navigationPanel: frameSettings.navigationPanel
             navigationRowStart: thicknessSection.navigationRowEnd + 1
 
             visible: frameSettings.frameMarginPropertyItem.isEnabled
             height: visible ? implicitHeight : 0
 
-            titleText: qsTrc("inspector", "Margin")
+            titleText: qsTrc("inspector", "Padding")
             propertyItem: frameSettings.frameMarginPropertyItem
 
             step: 0.1

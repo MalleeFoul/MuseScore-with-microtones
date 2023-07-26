@@ -28,7 +28,6 @@
 
 #include "iengravingfont.h"
 #include "types/typesconv.h"
-#include "layout/v0/tlayout.h"
 
 #include "accidental.h"
 #include "chord.h"
@@ -39,8 +38,6 @@
 #include "score.h"
 #include "segment.h"
 #include "staff.h"
-
-#include "layout/v0/arpeggiolayout.h"
 
 #include "log.h"
 
@@ -78,95 +75,6 @@ void Arpeggio::setHeight(double h)
 }
 
 //---------------------------------------------------------
-//   symbolLine
-//    construct a string of symbols approximating width w
-//---------------------------------------------------------
-
-void Arpeggio::symbolLine(SymId end, SymId fill)
-{
-    double top = calcTop();
-    double bottom = calcBottom();
-    double w   = bottom - top;
-    double mag = magS();
-    IEngravingFontPtr f = score()->engravingFont();
-
-    m_symbols.clear();
-    double w1 = f->advance(end, mag);
-    double w2 = f->advance(fill, mag);
-    int n    = lrint((w - w1) / w2);
-    for (int i = 0; i < n; ++i) {
-        m_symbols.push_back(fill);
-    }
-    m_symbols.push_back(end);
-}
-
-//---------------------------------------------------------
-//   calcTop
-//---------------------------------------------------------
-
-double Arpeggio::calcTop() const
-{
-    double top = -_userLen1;
-    if (!explicitParent()) {
-        return top;
-    }
-    switch (arpeggioType()) {
-    case ArpeggioType::BRACKET: {
-        double lineWidth = score()->styleMM(Sid::ArpeggioLineWidth);
-        return top - lineWidth / 2.0;
-    }
-    case ArpeggioType::NORMAL:
-    case ArpeggioType::UP:
-    case ArpeggioType::DOWN: {
-        // if the top is in the staff on a space, move it up
-        // if the bottom note is on a line, the distance is 0.25 spaces
-        // if the bottom note is on a space, the distance is 0.5 spaces
-        int topNoteLine = chord()->upNote()->line();
-        int lines = staff()->lines(tick());
-        int bottomLine = (lines - 1) * 2;
-        if (topNoteLine <= 0 || topNoteLine % 2 == 0 || topNoteLine >= bottomLine) {
-            return top;
-        }
-        int downNoteLine = chord()->downNote()->line();
-        if (downNoteLine % 2 == 1 && downNoteLine < bottomLine) {
-            return top - 0.4 * spatium();
-        }
-        return top - 0.25 * spatium();
-    }
-    default: {
-        return top - spatium() / 4;
-    }
-    }
-}
-
-//---------------------------------------------------------
-//   calcBottom
-//---------------------------------------------------------
-
-double Arpeggio::calcBottom() const
-{
-    double top = -_userLen1;
-    double bottom = _height + _userLen2;
-    if (!explicitParent()) {
-        return bottom;
-    }
-    switch (arpeggioType()) {
-    case ArpeggioType::BRACKET: {
-        double lineWidth = score()->styleMM(Sid::ArpeggioLineWidth);
-        return bottom - top + lineWidth;
-    }
-    case ArpeggioType::NORMAL:
-    case ArpeggioType::UP:
-    case ArpeggioType::DOWN: {
-        return bottom;
-    }
-    default: {
-        return bottom - top + spatium() / 2;
-    }
-    }
-}
-
-//---------------------------------------------------------
 //   draw
 //---------------------------------------------------------
 
@@ -180,7 +88,7 @@ void Arpeggio::draw(mu::draw::Painter* painter) const
     double y1 = _bbox.top();
     double y2 = _bbox.bottom();
 
-    double lineWidth = score()->styleMM(Sid::ArpeggioLineWidth);
+    double lineWidth = style().styleMM(Sid::ArpeggioLineWidth);
 
     painter->setPen(Pen(curColor(), lineWidth, PenStyle::SolidLine, PenCapStyle::FlatCap));
     painter->save();
@@ -226,7 +134,7 @@ void Arpeggio::draw(mu::draw::Painter* painter) const
 
     case ArpeggioType::BRACKET:
     {
-        double w = score()->styleS(Sid::ArpeggioHookLen).val() * _spatium;
+        double w = style().styleS(Sid::ArpeggioHookLen).val() * _spatium;
         painter->drawLine(LineF(0.0, y1, w, y1));
         painter->drawLine(LineF(0.0, y2, w, y2));
         painter->drawLine(LineF(0.0, y1 - lineWidth / 2, 0.0, y2 + lineWidth / 2));
@@ -261,7 +169,7 @@ void Arpeggio::editDrag(EditData& ed)
         _userLen2 += d;
     }
 
-    layout()->layoutOnEditDrag(this);
+    layout()->layoutItem(this);
 }
 
 //---------------------------------------------------------
@@ -486,12 +394,12 @@ double Arpeggio::insetWidth() const
     case ArpeggioType::UP_STRAIGHT:
     case ArpeggioType::DOWN_STRAIGHT:
     {
-        return (width() - score()->styleMM(Sid::ArpeggioLineWidth)) / 2;
+        return (width() - style().styleMM(Sid::ArpeggioLineWidth)) / 2;
     }
 
     case ArpeggioType::BRACKET:
     {
-        return width() - score()->styleMM(Sid::ArpeggioLineWidth) / 2;
+        return width() - style().styleMM(Sid::ArpeggioLineWidth) / 2;
     }
     }
     return 0.0;
@@ -522,7 +430,7 @@ double Arpeggio::insetDistance(std::vector<Accidental*>& accidentals, double mag
         if (furthestAccidental) {
             bool currentIsFurtherX = accidental->x() < furthestAccidental->x();
             bool currentIsSameX = accidental->x() == furthestAccidental->x();
-            auto accidentalBbox = symBbox(accidental->symbol());
+            auto accidentalBbox = symBbox(accidental->symId());
             double currentTop = accidental->note()->pos().y() + accidentalBbox.top() * mag_;
             double currentBottom = accidental->note()->pos().y() + accidentalBbox.bottom() * mag_;
             bool collidesWithTop = currentTop <= arpeggioTop && hasTopArrow;
@@ -538,18 +446,18 @@ double Arpeggio::insetDistance(std::vector<Accidental*>& accidentals, double mag
 
     // this cutout means the vertical lines for a ♯, ♭, and ♮ are in the same position
     // if an accidental does not have a cutout (e.g., ♭), this value is 0
-    double accidentalCutOutX = symSmuflAnchor(furthestAccidental->symbol(), SmuflAnchorId::cutOutNW).x() * mag_;
-    double accidentalCutOutYTop = symSmuflAnchor(furthestAccidental->symbol(), SmuflAnchorId::cutOutNW).y() * mag_;
-    double accidentalCutOutYBottom = symSmuflAnchor(furthestAccidental->symbol(), SmuflAnchorId::cutOutSW).y() * mag_;
+    double accidentalCutOutX = symSmuflAnchor(furthestAccidental->symId(), SmuflAnchorId::cutOutNW).x() * mag_;
+    double accidentalCutOutYTop = symSmuflAnchor(furthestAccidental->symId(), SmuflAnchorId::cutOutNW).y() * mag_;
+    double accidentalCutOutYBottom = symSmuflAnchor(furthestAccidental->symId(), SmuflAnchorId::cutOutSW).y() * mag_;
 
-    double maximumInset = (score()->styleMM(Sid::ArpeggioAccidentalDistance)
-                           - score()->styleMM(Sid::ArpeggioAccidentalDistanceMin)) * mag_;
+    double maximumInset = (style().styleMM(Sid::ArpeggioAccidentalDistance)
+                           - style().styleMM(Sid::ArpeggioAccidentalDistanceMin)) * mag_;
 
     if (accidentalCutOutX > maximumInset) {
         accidentalCutOutX = maximumInset;
     }
 
-    RectF bbox = symBbox(furthestAccidental->symbol());
+    RectF bbox = symBbox(furthestAccidental->symId());
     double center = furthestAccidental->note()->pos().y() * mag_;
     double top = center + bbox.top() * mag_;
     double bottom = center + bbox.bottom() * mag_;

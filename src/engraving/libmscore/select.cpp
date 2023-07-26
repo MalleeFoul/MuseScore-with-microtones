@@ -559,7 +559,7 @@ void Selection::updateSelectedElements()
             return;
         }
 
-        if (s2 && s2 == s2->measure()->first() && !(s2->measure()->prevMeasure() && s2->measure()->prevMeasure()->mmRest1())) {
+        if (s2 && s2 == s2->measure()->first() && !(s2->measure()->prevMeasure() && s2->measure()->prevMeasure()->coveringMMRestOrThis())) {
             // we want the last segment of the previous measure (unless it's part of a MMrest)
             s2 = s2->prev1();
         }
@@ -1018,6 +1018,7 @@ ByteArray Selection::symbolListMimeData() const
             }
             continue;
         case ElementType::PLAYTECH_ANNOTATION:
+        case ElementType::CAPO:
         case ElementType::STAFF_TEXT:
             seg = toStaffTextBase(e)->segment();
             break;

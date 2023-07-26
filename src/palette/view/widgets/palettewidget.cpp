@@ -46,7 +46,7 @@
 #include "draw/types/pen.h"
 
 #include "engraving/rw/rwregister.h"
-#include "engraving/layout/v0/tlayout.h"
+
 #include "engraving/libmscore/actionicon.h"
 #include "engraving/libmscore/chord.h"
 #include "engraving/libmscore/engravingitem.h"
@@ -61,6 +61,7 @@
 #include "engraving/compat/dummyelement.h"
 
 #include "internal/palettecelliconengine.h"
+#include "internal/palettelayout.h"
 
 #include "log.h"
 
@@ -577,7 +578,7 @@ QRect PaletteWidget::rectForCellAt(int idx) const
 
 QPixmap PaletteWidget::pixmapForCellAt(int paletteIdx) const
 {
-    qreal _spatium = gpaletteScore->spatium();
+    qreal _spatium = gpaletteScore->style().spatium();
     qreal magS     = configuration()->paletteSpatium() * mag() * paletteScaling();
     qreal mag      = magS / _spatium;
 
@@ -594,8 +595,7 @@ QPixmap PaletteWidget::pixmapForCellAt(int paletteIdx) const
         cellMag = 1.0;
     }
 
-    layout::v0::LayoutContext lctx(element->score());
-    layout::v0::TLayout::layoutItem(element.get(), lctx);
+    PaletteLayout::layoutItem(element.get());
 
     RectF r = element->bbox();
     int w = lrint(r.width() * cellMag);
@@ -947,10 +947,10 @@ void PaletteWidget::resizeEvent(QResizeEvent* e)
 
 void PaletteWidget::paintEvent(QPaintEvent* /*event*/)
 {
-    qreal _spatium = gpaletteScore->spatium();
+    qreal _spatium = gpaletteScore->style().spatium();
     qreal magS     = configuration()->paletteSpatium() * mag() * paletteScaling();
     qreal mag      = magS / _spatium;
-    gpaletteScore->setSpatium(SPATIUM20);
+    gpaletteScore->style().setSpatium(SPATIUM20);
 
     mu::draw::Painter painter(this, "palette");
     painter.setAntialiasing(true);
@@ -1058,8 +1058,7 @@ void PaletteWidget::paintEvent(QPaintEvent* /*event*/)
             cellMag = 1.0;
         }
 
-        layout::v0::LayoutContext lctx(el->score());
-        layout::v0::TLayout::layoutItem(el.get(), lctx);
+        PaletteLayout::layoutItem(el.get());
 
         if (drawStaff) {
             qreal y = r.y() + vgridM * .5 - dy + yOffset() * _spatium * cellMag;

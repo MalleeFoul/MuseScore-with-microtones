@@ -38,10 +38,8 @@
 #include "iengravingfont.h"
 
 #include "rw/rwregister.h"
-#include "rw/write/twrite.h"
 
 #include "types/typesconv.h"
-#include "layout/v0/tlayout.h"
 
 #ifndef ENGRAVING_NO_ACCESSIBILITY
 #include "accessibility/accessibleitem.h"
@@ -56,7 +54,6 @@
 #include "mscore.h"
 #include "note.h"
 #include "page.h"
-#include "rest.h"
 #include "score.h"
 #include "segment.h"
 #include "shape.h"
@@ -88,7 +85,6 @@ EngravingItem::EngravingItem(const ElementType& type, EngravingObject* se, Eleme
     _flags         = f;
     _color         = engravingConfiguration()->defaultColor();
     _mag           = 1.0;
-    _tag           = 1;
     _z             = -1;
     _offsetChanged = OffsetChange::NONE;
     _minDistance   = Spatium(0.0);
@@ -104,7 +100,6 @@ EngravingItem::EngravingItem(const EngravingItem& e)
     _track      = e._track;
     _flags      = e._flags;
     setFlag(ElementFlag::SELECTED, false);
-    _tag        = e._tag;
     _z          = e._z;
     _color      = e._color;
     _offsetChanged = e._offsetChanged;
@@ -223,15 +218,15 @@ void EngravingItem::localSpatiumChanged(double oldValue, double newValue)
 double EngravingItem::spatium() const
 {
     if (systemFlag() || (explicitParent() && parentItem()->systemFlag())) {
-        return score()->spatium();
+        return style().spatium();
     }
     Staff* s = staff();
-    return s ? s->spatium(this) : score()->spatium();
+    return s ? s->spatium(this) : style().spatium();
 }
 
 bool EngravingItem::isInteractionAvailable() const
 {
-    if (!visible() && (score()->printing() || !score()->showInvisible())) {
+    if (!visible() && (score()->printing() || !score()->isShowInvisible())) {
         return false;
     }
 
@@ -253,7 +248,7 @@ bool EngravingItem::offsetIsSpatiumDependent() const
 
 double EngravingItem::magS() const
 {
-    return mag() * (score()->spatium() / SPATIUM20);
+    return mag() * (style().spatium() / SPATIUM20);
 }
 
 //---------------------------------------------------------
@@ -305,7 +300,7 @@ void EngravingItem::deleteLater()
 void EngravingItem::scanElements(void* data, void (* func)(void*, EngravingItem*), bool all)
 {
     if (scanChildren().size() == 0) {
-        if (all || visible() || score()->showInvisible()) {
+        if (all || visible() || score()->isShowInvisible()) {
             func(data, this);
         }
     } else {
@@ -895,12 +890,6 @@ void Compound::layout()
 {
     UNREACHABLE;
     setbbox(RectF());
-    layout::v0::LayoutContext lctx(score());
-    for (auto i = elements.begin(); i != elements.end(); ++i) {
-        EngravingItem* e = *i;
-        layout::v0::TLayout::layoutItem(e, lctx);
-        addbbox(e->bbox().translated(e->pos()));
-    }
 }
 
 //---------------------------------------------------------
@@ -1095,7 +1084,7 @@ void collectElements(void* data, EngravingItem* e)
 
 bool EngravingItem::autoplace() const
 {
-    if (!score() || !score()->styleB(Sid::autoplaceEnabled)) {
+    if (!score() || !style().styleB(Sid::autoplaceEnabled)) {
         return false;
     }
     return !flag(ElementFlag::NO_AUTOPLACE);
@@ -1510,7 +1499,7 @@ bool EngravingItem::symIsValid(SymId id) const
 
 bool EngravingItem::concertPitch() const
 {
-    return score()->styleB(Sid::concertPitch);
+    return style().styleB(Sid::concertPitch);
 }
 
 //---------------------------------------------------------
@@ -2071,7 +2060,7 @@ void EngravingItem::endEdit(EditData&)
 
 double EngravingItem::styleP(Sid idx) const
 {
-    return score()->styleMM(idx);
+    return style().styleMM(idx);
 }
 
 bool EngravingItem::colorsInversionEnabled() const
@@ -2253,7 +2242,7 @@ void EngravingItem::autoplaceSegmentElement(bool above, bool add)
         Segment* s = toSegment(explicitParent());
         Measure* m = s->measure();
 
-        double sp = score()->spatium();
+        double sp = style().spatium();
         staff_idx_t si = staffIdxOrNextVisible();
 
         // if there's no good staff for this object, obliterate it
@@ -2332,7 +2321,7 @@ void EngravingItem::autoplaceMeasureElement(bool above, bool add)
             return;
         }
 
-        double sp = score()->spatium();
+        double sp = style().spatium();
         double minDistance = _minDistance.val() * sp;
 
         SysStaff* ss = m->system()->staff(si);
@@ -2414,21 +2403,6 @@ void EngravingItem::doInitAccessible()
 
 #endif // ENGRAVING_NO_ACCESSIBILITY
 
-KerningType EngravingItem::computeKerningType(const EngravingItem* nextItem) const
-{
-    if (_userSetKerning != KerningType::NOT_SET) {
-        return _userSetKerning;
-    }
-    if (sameVoiceKerningLimited() && nextItem->sameVoiceKerningLimited() && track() == nextItem->track()) {
-        return KerningType::NON_KERNING;
-    }
-    if ((neverKernable() || nextItem->neverKernable())
-        && !(alwaysKernable() || nextItem->alwaysKernable())) {
-        return KerningType::NON_KERNING;
-    }
-    return doComputeKerningType(nextItem);
-}
-
 String EngravingItem::formatBarsAndBeats() const
 {
     String result;
@@ -2443,23 +2417,5 @@ String EngravingItem::formatBarsAndBeats() const
     }
 
     return result;
-}
-
-double EngravingItem::computePadding(const EngravingItem* nextItem) const
-{
-    double scaling = (mag() + nextItem->mag()) / 2;
-    double padding = score()->paddingTable().at(type()).at(nextItem->type());
-    padding *= scaling;
-    if (!isLedgerLine() && nextItem->isRest()) {
-        const Rest* rest = toRest(nextItem);
-        SymId symbol = rest->sym();
-        if (symbol == SymId::restWholeLegerLine
-            || symbol == SymId::restDoubleWholeLegerLine
-            || symbol == SymId::restHalfLegerLine) {
-            // In this case the ledgerLine is included in the glyph itself, so we must ignore it
-            padding += rest->bbox().left();
-        }
-    }
-    return padding;
 }
 }

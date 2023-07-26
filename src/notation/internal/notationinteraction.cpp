@@ -41,7 +41,6 @@
 #include "draw/types/pen.h"
 #include "draw/types/painterpath.h"
 #include "engraving/internal/qmimedataadapter.h"
-#include "engraving/layout/v0/tlayout.h"
 
 #include "libmscore/actionicon.h"
 #include "libmscore/articulation.h"
@@ -82,10 +81,11 @@
 #include "engraving/rw/rwregister.h"
 
 #include "masternotation.h"
-#include "scorecallbacks.h"
+#include "mscoreerrorscontroller.h"
+#include "notationerrors.h"
 #include "notationnoteinput.h"
 #include "notationselection.h"
-#include "notationerrors.h"
+#include "scorecallbacks.h"
 
 using namespace mu::io;
 using namespace mu::notation;
@@ -250,129 +250,6 @@ void NotationInteraction::rollback()
     m_undoStack->rollbackChanges();
 }
 
-void NotationInteraction::checkAndShowMScoreError() const
-{
-    TRACEFUNC;
-
-    MsError err = MScore::_error;
-    if (err == MsError::MS_NO_ERROR) {
-        return;
-    }
-
-    MScore::setError(MsError::MS_NO_ERROR); // reset
-
-    if (!configuration()->needToShowMScoreError(MScore::errorToString(err))) {
-        return;
-    }
-
-    std::string title;
-    std::string message;
-
-    switch (err) {
-    case MsError::MS_NO_ERROR:
-        return;
-    case MsError::NO_NOTE_SELECTED:
-        title = trc("notation", "No note selected");
-        message = trc("notation", "Please select a note and retry");
-        break;
-    case MsError::NO_CHORD_REST_SELECTED:
-        title = trc("notation", "No chord/rest selected");
-        message = trc("notation", "Please select a chord or rest and retry");
-        break;
-    case MsError::NO_LYRICS_SELECTED:
-        title = trc("notation", "No note or lyrics selected");
-        message = trc("notation", "Please select a note or lyrics and retry");
-        break;
-    case MsError::NO_NOTE_REST_SELECTED:
-        title = trc("notation", "No note or rest selected");
-        message = trc("notation", "Please select a note or rest and retry");
-        break;
-    case MsError::NO_FLIPPABLE_SELECTED:
-        title = trc("notation", "No flippable element selected");
-        message = trc("notation", "Please select an element that can be flipped and retry");
-        break;
-    case MsError::NO_STAFF_SELECTED:
-        title = trc("notation", "No staff selected");
-        message = trc("notation", "Please select one or more staves and retry");
-        break;
-    case MsError::NO_NOTE_FIGUREDBASS_SELECTED:
-        title = trc("notation", "No note or figured bass selected");
-        message = trc("notation", "Please select a note or figured bass and retry");
-        break;
-    case MsError::CANNOT_INSERT_TUPLET:
-        title = trc("notation", "Cannot insert chord/rest in tuplet");
-        break;
-    case MsError::CANNOT_SPLIT_TUPLET:
-        title = trc("notation", "Cannot split tuplet");
-        break;
-    case MsError::CANNOT_SPLIT_MEASURE_FIRST_BEAT:
-        title = trc("notation", "Cannot split measure at the first beat");
-        break;
-    case MsError::CANNOT_SPLIT_MEASURE_TUPLET:
-        title = trc("notation", "Cannot split measure here");
-        message = trc("notation", "Cannot split tuplet");
-        break;
-    case MsError::INSUFFICIENT_MEASURES:
-        title = trc("notation", "Cannot create measure repeat here");
-        message = trc("notation", "Insufficient or unequal measures");
-        break;
-    case MsError::CANNOT_SPLIT_MEASURE_REPEAT:
-        title = trc("notation", "Cannot split measure repeat");
-        message = trc("notation", "Please select a note or rest and retry");
-        break;
-    case MsError::CANNOT_SPLIT_MEASURE_TOO_SHORT:
-        title = trc("notation", "This measure is too short to be split");
-        break;
-    case MsError::CANNOT_REMOVE_TIME_TUPLET:
-        title = trc("notation", "Cannot remove time from tuplet");
-        message = trc("notation", "Please select the complete tuplet and retry");
-        break;
-    case MsError::CANNOT_REMOVE_TIME_MEASURE_REPEAT:
-        title = trc("notation", "Cannot remove time from measure repeat");
-        message = trc("notation", "Please select the complete measure repeat and retry");
-        break;
-    case MsError::NO_DEST:
-        title = trc("notation", "No destination to paste");
-        break;
-    case MsError::DEST_TUPLET:
-        title = trc("notation", "Cannot paste into tuplet");
-        break;
-    case MsError::TUPLET_CROSSES_BAR:
-        title = trc("notation", "Tuplet cannot cross barlines");
-        break;
-    case MsError::DEST_LOCAL_TIME_SIGNATURE:
-        title = trc("notation", "Cannot paste in local time signature");
-        break;
-    case MsError::DEST_TREMOLO:
-        title = trc("notation", "Cannot paste in tremolo");
-        break;
-    case MsError::NO_MIME:
-        title = trc("notation", "Nothing to paste");
-        break;
-    case MsError::DEST_NO_CR:
-        title = trc("notation", "Destination is not a chord or rest");
-        break;
-    case MsError::CANNOT_CHANGE_LOCAL_TIMESIG_MEASURE_NOT_EMPTY:
-        title = trc("notation", "Cannot change local time signature");
-        message = trc("notation", "Measure is not empty");
-        break;
-    case MsError::CANNOT_CHANGE_LOCAL_TIMESIG_HAS_EXCERPTS:
-        title = trc("notation", "Cannot change local time signature");
-        message = trc("notation", "This score already has part scores. Changing local time "
-                                  "signatures while part scores are present is not yet supported.");
-        break;
-    case MsError::CORRUPTED_MEASURE:
-        title = trc("notation", "Cannot change time signature in front of a corrupted measure");
-        break;
-    }
-
-    IInteractive::Result result
-        = interactive()->info(title, message, {}, 0, IInteractive::Option::WithIcon | IInteractive::Option::WithDontShowAgainCheckBox);
-    if (!result.showAgain()) {
-        configuration()->setNeedToShowMScoreError(MScore::errorToString(err), false);
-    }
-}
-
 void NotationInteraction::notifyAboutDragChanged()
 {
     m_dragChanged.notify();
@@ -477,7 +354,7 @@ void NotationInteraction::showShadowNote(const PointF& pos)
     // in any empty measure, pos will be right next to barline
     // so pad this by barNoteDistance
     qreal relX = position.pos.x() - position.segment->measure()->canvasPos().x();
-    position.pos.rx() -= qMin(relX - score()->styleMM(mu::engraving::Sid::barNoteDistance) * mag, 0.0);
+    position.pos.rx() -= qMin(relX - score()->style().styleMM(mu::engraving::Sid::barNoteDistance) * mag, 0.0);
 
     mu::engraving::NoteHeadGroup noteheadGroup = mu::engraving::NoteHeadGroup::HEAD_NORMAL;
     mu::engraving::NoteHeadType noteHead = inputState.duration().headType();
@@ -525,8 +402,7 @@ void NotationInteraction::showShadowNote(const PointF& pos)
         shadowNote.setState(symNotehead, duration, false, segmentSkylineTopY, segmentSkylineBottomY);
     }
 
-    layout::v0::LayoutContext lctx(shadowNote.score());
-    layout::v0::TLayout::layout(&shadowNote, lctx);
+    EngravingItem::layout()->layoutItem(&shadowNote);
 
     shadowNote.setPos(position.pos);
 }
@@ -1035,7 +911,8 @@ void NotationInteraction::startDrag(const std::vector<EngravingItem*>& elems,
         bool draggable = isDraggable(e);
 
         if (!draggable && e->isSpanner()) {
-            draggable = isDraggable(toSpanner(e)->frontSegment());
+            Spanner* s = toSpanner(e);
+            draggable = !s->segmentsEmpty() && isDraggable(s->frontSegment());
         }
 
         if (!draggable) {
@@ -1200,7 +1077,7 @@ void NotationInteraction::endDrag()
     apply();
     notifyAboutDragChanged();
 
-    checkAndShowMScoreError();
+    MScoreErrorsController::checkAndShowMScoreError();
 
     //    updateGrips();
     //    if (editData.element->normalModeEditBehavior() == EngravingItem::EditBehavior::Edit
@@ -1276,7 +1153,7 @@ void NotationInteraction::startDrop(const QByteArray& edata)
     EngravingItem* el = engraving::Factory::createItem(type, score()->dummy());
     if (el) {
         if (type == ElementType::BAR_LINE || type == ElementType::ARPEGGIO || type == ElementType::BRACKET) {
-            double spatium = score()->spatium();
+            double spatium = score()->style().spatium();
             el->setHeight(spatium * 5);
         }
         m_dropData.ed.dropElement = el;
@@ -1284,8 +1161,7 @@ void NotationInteraction::startDrop(const QByteArray& edata)
 
         rw::RWRegister::reader()->readItem(m_dropData.ed.dropElement, e);
 
-        layout::v0::LayoutContext lctx(m_dropData.ed.dropElement->score());
-        layout::v0::TLayout::layoutItem(m_dropData.ed.dropElement, lctx);
+        EngravingItem::layout()->layoutItem(m_dropData.ed.dropElement);
     }
 }
 
@@ -1306,8 +1182,7 @@ bool NotationInteraction::startDrop(const QUrl& url)
     m_dropData.ed.dragOffset = QPointF();
     m_dropData.ed.dropElement->setParent(nullptr);
 
-    layout::v0::LayoutContext lctx(m_dropData.ed.dropElement->score());
-    layout::v0::TLayout::layoutItem(m_dropData.ed.dropElement, lctx);
+    mu::engraving::EngravingItem::layout()->layoutItem(m_dropData.ed.dropElement);
 
     return true;
 }
@@ -1362,6 +1237,7 @@ bool NotationInteraction::isDropAccepted(const PointF& pos, Qt::KeyboardModifier
     case ElementType::SYSTEM_TEXT:
     case ElementType::TRIPLET_FEEL:
     case ElementType::PLAYTECH_ANNOTATION:
+    case ElementType::CAPO:
     case ElementType::NOTEHEAD:
     case ElementType::TREMOLO:
     case ElementType::LAYOUT_BREAK:
@@ -1519,6 +1395,7 @@ bool NotationInteraction::drop(const PointF& pos, Qt::KeyboardModifiers modifier
     case ElementType::SYSTEM_TEXT:
     case ElementType::TRIPLET_FEEL:
     case ElementType::PLAYTECH_ANNOTATION:
+    case ElementType::CAPO:
     case ElementType::NOTEHEAD:
     case ElementType::TREMOLO:
     case ElementType::LAYOUT_BREAK:
@@ -1611,7 +1488,7 @@ bool NotationInteraction::drop(const PointF& pos, Qt::KeyboardModifiers modifier
         notifyAboutDropChanged();
     }
 
-    checkAndShowMScoreError();
+    MScoreErrorsController::checkAndShowMScoreError();
 
     return accepted;
 }
@@ -1857,13 +1734,8 @@ bool NotationInteraction::applyPaletteElement(mu::engraving::EngravingItem* elem
                     {
                         mu::engraving::KeySig* okeysig = engraving::Factory::createKeySig(score->dummy()->segment());
                         okeysig->setKeySigEvent(staff->keySigEvent(tick1));
-                        if (!score->styleB(mu::engraving::Sid::concertPitch) && !okeysig->isAtonal()) {
-                            mu::engraving::Interval v = staff->part()->instrument(tick1)->transpose();
-                            if (!v.isZero()) {
-                                Key k = okeysig->key();
-                                okeysig->setKey(transposeKey(k, v, okeysig->part()->preferSharpFlat()));
-                            }
-                        }
+                        Key ck = okeysig->concertKey();
+                        okeysig->setKey(ck);
                         oelement = okeysig;
                         break;
                     }
@@ -1971,7 +1843,7 @@ bool NotationInteraction::applyPaletteElement(mu::engraving::EngravingItem* elem
 
     setDropTarget(nullptr);
 
-    checkAndShowMScoreError();
+    MScoreErrorsController::checkAndShowMScoreError();
 
     return true;
 }
@@ -2642,8 +2514,8 @@ void NotationInteraction::selectEmptyTrailingMeasure()
         ftm = score()->lastMeasure();
     }
     if (ftm) {
-        if (score()->styleB(mu::engraving::Sid::createMultiMeasureRests) && ftm->hasMMRest()) {
-            ftm = ftm->mmRest1();
+        if (score()->style().styleB(mu::engraving::Sid::createMultiMeasureRests) && ftm->hasMMRest()) {
+            ftm = ftm->coveringMMRestOrThis();
         }
         EngravingItem* el
             = !cr ? ftm->first()->nextChordRest(0, false) : ftm->first()->nextChordRest(mu::engraving::trackZeroVoice(cr->track()), false);
@@ -2956,7 +2828,7 @@ void NotationInteraction::editText(QInputMethodEvent* event)
             cursor->updateCursorFormat();
             text->editInsertText(cursor, preeditString);
             text->setTextInvalid();
-            text->layout1();
+            EngravingItem::layout()->layoutText1(text);
             score()->update();
         }
     }
@@ -3421,7 +3293,7 @@ void NotationInteraction::splitSelectedMeasure()
     score()->cmdSplitMeasure(chordRest);
     apply();
 
-    checkAndShowMScoreError();
+    MScoreErrorsController::checkAndShowMScoreError();
 }
 
 void NotationInteraction::joinSelectedMeasures()
@@ -3436,7 +3308,7 @@ void NotationInteraction::joinSelectedMeasures()
     score()->cmdJoinMeasure(measureRange.startMeasure, measureRange.endMeasure);
     apply();
 
-    checkAndShowMScoreError();
+    MScoreErrorsController::checkAndShowMScoreError();
 }
 
 mu::Ret NotationInteraction::canAddBoxes() const
@@ -3590,7 +3462,10 @@ void NotationInteraction::copySelection()
         m_editData.element->editCopy(m_editData);
         mu::engraving::TextEditData* ted = static_cast<mu::engraving::TextEditData*>(m_editData.getData(m_editData.element).get());
         if (!ted->selectedText.isEmpty()) {
-            QGuiApplication::clipboard()->setText(ted->selectedText);
+            QMimeData* mimeData = new QMimeData();
+            mimeData->setData(TextEditData::mimeRichTextFormat, ted->selectedText.toQString().toUtf8());
+            mimeData->setText(ted->selectedPlainText);
+            QGuiApplication::clipboard()->setMimeData(mimeData);
         }
     } else {
         QMimeData* mimeData = selection()->mimeData();
@@ -3662,25 +3537,31 @@ void NotationInteraction::pasteSelection(const Fraction& scale)
     startEdit();
 
     if (isTextEditingStarted()) {
-        QString clipboardText = QGuiApplication::clipboard()->text();
-        QString textForPaste = clipboardText;
-        if ((!clipboardText.startsWith('<') || !clipboardText.contains('>')) && m_editData.element->isLyrics()) {
-            textForPaste = extractSyllable(clipboardText);
-        }
-
-        toTextBase(m_editData.element)->paste(m_editData, textForPaste);
-
-        if (!textForPaste.isEmpty() && m_editData.element->isLyrics()) {
-            if (textForPaste.endsWith('-')) {
-                navigateToNextSyllable();
-            } else if (textForPaste.endsWith('_')) {
-                addMelisma();
-            } else {
-                navigateToLyrics(false, false, false);
+        const QMimeData* mimeData = QApplication::clipboard()->mimeData();
+        if (mimeData->hasFormat(TextEditData::mimeRichTextFormat)) {
+            const QString txt = QString::fromUtf8(mimeData->data(TextEditData::mimeRichTextFormat));
+            toTextBase(m_editData.element)->paste(m_editData, txt);
+        } else {
+            QString clipboardText = mimeData->text();
+            QString textForPaste = clipboardText;
+            if ((!clipboardText.startsWith('<') || !clipboardText.contains('>')) && m_editData.element->isLyrics()) {
+                textForPaste = extractSyllable(clipboardText);
             }
 
-            QString textForNextPaste = clipboardText.remove(0, clipboardText.indexOf(textForPaste) + textForPaste.size());
-            QGuiApplication::clipboard()->setText(textForNextPaste);
+            toTextBase(m_editData.element)->paste(m_editData, textForPaste);
+
+            if (!textForPaste.isEmpty() && m_editData.element->isLyrics()) {
+                if (textForPaste.endsWith('-')) {
+                    navigateToNextSyllable();
+                } else if (textForPaste.endsWith('_')) {
+                    addMelisma();
+                } else {
+                    navigateToLyrics(false, false, false);
+                }
+
+                QString textForNextPaste = clipboardText.remove(0, clipboardText.indexOf(textForPaste) + textForPaste.size());
+                QGuiApplication::clipboard()->setText(textForNextPaste);
+            }
         }
     } else {
         const QMimeData* mimeData = QApplication::clipboard()->mimeData();
@@ -3690,7 +3571,7 @@ void NotationInteraction::pasteSelection(const Fraction& scale)
 
     apply();
 
-    checkAndShowMScoreError();
+    MScoreErrorsController::checkAndShowMScoreError();
 }
 
 void NotationInteraction::swapSelection()
@@ -3761,6 +3642,7 @@ void NotationInteraction::deleteSelection()
         score()->cmdDeleteSelection();
     }
 
+    MScoreErrorsController::checkAndShowMScoreError();
     apply();
     resetHitElementContext();
 }
@@ -3848,7 +3730,11 @@ void NotationInteraction::putRestToSelection()
     if (!is.duration().isValid() || is.duration().isZero() || is.duration().isMeasure()) {
         is.setDuration(DurationType::V_QUARTER);
     }
-    putRest(is.duration());
+    if (is.usingNoteEntryMethod(NoteEntryMethod::RHYTHM)) {
+        m_noteInput->padNote(Pad::REST);
+    } else {
+        putRest(is.duration());
+    }
 }
 
 void NotationInteraction::putRest(Duration duration)
@@ -4089,7 +3975,7 @@ void NotationInteraction::addIntervalToSelectedNotes(int interval)
 
     if (notes.empty()) {
         MScore::setError(MsError::NO_NOTE_SELECTED);
-        checkAndShowMScoreError();
+        MScoreErrorsController::checkAndShowMScoreError();
         return;
     }
 
@@ -4479,7 +4365,7 @@ void NotationInteraction::resetShapesAndPosition()
 ScoreConfig NotationInteraction::scoreConfig() const
 {
     ScoreConfig config;
-    config.isShowInvisibleElements = score()->showInvisible();
+    config.isShowInvisibleElements = score()->isShowInvisible();
     config.isShowUnprintableElements = score()->showUnprintable();
     config.isShowFrames = score()->showFrames();
     config.isShowPageMargins = score()->showPageborders();
@@ -5557,9 +5443,15 @@ void NotationInteraction::toggleAutoplace(bool all)
     execute(&mu::engraving::Score::cmdToggleAutoplace, all);
 }
 
-void NotationInteraction::insertClef(mu::engraving::ClefType clef)
+bool NotationInteraction::canInsertClef(ClefType type) const
 {
-    execute(&mu::engraving::Score::cmdInsertClef, clef);
+    const Score* score = this->score();
+    return score && score->canInsertClef(type);
+}
+
+void NotationInteraction::insertClef(ClefType type)
+{
+    execute(&mu::engraving::Score::cmdInsertClef, type);
 }
 
 void NotationInteraction::changeAccidental(mu::engraving::AccidentalType accidental)
@@ -5671,7 +5563,7 @@ void NotationInteraction::showItem(const mu::engraving::EngravingItem* el, int s
     RectF mRect(m->canvasBoundingRect());
     RectF sysRect = mRect;
 
-    double _spatium    = score()->spatium();
+    double _spatium    = score()->style().spatium();
     const qreal border = _spatium * 3;
     RectF showRect;
     if (staffIndex == -1) {

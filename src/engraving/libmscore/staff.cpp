@@ -425,7 +425,7 @@ ClefTypeList Staff::clefType(const Fraction& tick) const
         switch (staffGroup) {
         case StaffGroup::TAB:
         {
-            ClefType sct = ClefType(score()->styleI(Sid::tabClef));
+            ClefType sct = ClefType(style().styleI(Sid::tabClef));
             ct = staffType(tick)->lines() <= 4 ? ClefTypeList(sct == ClefType::TAB ? ClefType::TAB4 : ClefType::TAB4_SERIF) : ClefTypeList(
                 sct == ClefType::TAB ? ClefType::TAB : ClefType::TAB_SERIF);
         }
@@ -448,7 +448,7 @@ ClefTypeList Staff::clefType(const Fraction& tick) const
 ClefType Staff::clef(const Fraction& tick) const
 {
     ClefTypeList c = clefType(tick);
-    return score()->styleB(Sid::concertPitch) ? c._concertClef : c._transposingClef;
+    return style().styleB(Sid::concertPitch) ? c._concertClef : c._transposingClef;
 }
 
 //---------------------------------------------------------
@@ -687,6 +687,46 @@ void Staff::clearTimeSig()
 }
 
 //---------------------------------------------------------
+//   Staff::transpose
+//
+//    actual staff transposioton at tick
+//    (taking key into account)
+//---------------------------------------------------------
+
+Interval Staff::transpose(const Fraction& tick) const
+{
+    // get real transposition
+
+    Interval v = part()->instrument(tick)->transpose();
+    if (v.isZero()) {
+        return v;
+    }
+    Key cKey = concertKey(tick);
+    v.flip();
+    Key tKey = transposeKey(cKey, v, part()->preferSharpFlat());
+    v.flip();
+
+    int chromatic = (7 * (static_cast<int>(cKey) - static_cast<int>(tKey))) % 12;
+    if (chromatic < 0) {
+        chromatic += 12;
+    }
+    int diatonic = (4 * (static_cast<int>(cKey) - static_cast<int>(tKey))) % 7;
+    if (diatonic < 0) {
+        diatonic += 7;
+    }
+
+    if (v.chromatic < 0 || v.diatonic < 0) {
+        chromatic -= 12;
+        diatonic -= 7;
+    }
+
+    v.chromatic = v.chromatic - (v.chromatic % 12) + (chromatic % 12);
+    v.diatonic = v.diatonic - (v.diatonic % 7) + (diatonic % 7);
+
+    return v;
+}
+
+//---------------------------------------------------------
 //   Staff::keySigEvent
 //
 //    locates the key sig currently in effect at tick
@@ -766,12 +806,12 @@ double Staff::height() const
 
 double Staff::spatium(const Fraction& tick) const
 {
-    return score()->spatium() * staffMag(tick);
+    return style().spatium() * staffMag(tick);
 }
 
 double Staff::spatium(const EngravingItem* e) const
 {
-    return score()->spatium() * staffMag(e);
+    return style().spatium() * staffMag(e);
 }
 
 //---------------------------------------------------------
@@ -780,7 +820,7 @@ double Staff::spatium(const EngravingItem* e) const
 
 double Staff::staffMag(const StaffType* stt) const
 {
-    return (stt->isSmall() ? score()->styleD(Sid::smallStaffMag) : 1.0) * stt->userMag();
+    return (stt->isSmall() ? style().styleD(Sid::smallStaffMag) : 1.0) * stt->userMag();
 }
 
 double Staff::staffMag(const Fraction& tick) const
@@ -801,9 +841,9 @@ SwingParameters Staff::swing(const Fraction& tick) const
 {
     SwingParameters sp;
     int swingUnit = 0;
-    ByteArray ba = score()->styleSt(Sid::swingUnit).toAscii();
+    ByteArray ba = style().styleSt(Sid::swingUnit).toAscii();
     DurationType unit = TConv::fromXml(ba.constChar(), DurationType::V_INVALID);
-    int swingRatio = score()->styleI(Sid::swingRatio);
+    int swingRatio = style().styleI(Sid::swingRatio);
     if (unit == DurationType::V_EIGHTH) {
         swingUnit = Constants::DIVISION / 2;
     } else if (unit == DurationType::V_16TH) {
@@ -826,64 +866,31 @@ SwingParameters Staff::swing(const Fraction& tick) const
     return _swingList.at(*it);
 }
 
-//---------------------------------------------------------
-//   capo
-//---------------------------------------------------------
-
-int Staff::capo(const Fraction& tick) const
+const CapoParams& Staff::capo(const Fraction& tick) const
 {
-    if (_capoList.empty()) {
-        return 0;
+    static const CapoParams dummy;
+
+    if (_capoMap.empty()) {
+        return dummy;
     }
 
-    std::vector<int> ticks = mu::keys(_capoList);
+    std::vector<int> ticks = mu::keys(_capoMap);
     auto it = std::upper_bound(ticks.cbegin(), ticks.cend(), tick.ticks());
     if (it == ticks.cbegin()) {
-        return 0;
+        return dummy;
     }
     --it;
-    return _capoList.at(*it);
+    return _capoMap.at(*it);
 }
 
-//---------------------------------------------------------
-//   getNotes
-//---------------------------------------------------------
-
-std::list<Note*> Staff::getNotes() const
+void Staff::insertCapoParams(const Fraction& tick, const CapoParams& params)
 {
-    std::list<Note*> list;
-
-    staff_idx_t staffIdx = idx();
-
-    SegmentType st = SegmentType::ChordRest;
-    for (Segment* s = score()->firstSegment(st); s; s = s->next1(st)) {
-        for (voice_idx_t voice = 0; voice < VOICES; ++voice) {
-            track_idx_t track = voice + staffIdx * VOICES;
-            EngravingItem* e = s->element(track);
-            if (e && e->isChord()) {
-                addChord(list, toChord(e), voice);
-            }
-        }
-    }
-
-    return list;
+    _capoMap.insert_or_assign(tick.ticks(), params);
 }
 
-//---------------------------------------------------------
-//   addChord
-//---------------------------------------------------------
-
-void Staff::addChord(std::list<Note*>& list, Chord* chord, voice_idx_t voice) const
+void Staff::clearCapoParams()
 {
-    for (Chord* c : chord->graceNotes()) {
-        addChord(list, c, voice);
-    }
-    for (Note* note : chord->notes()) {
-        if (note->tieBack()) {
-            continue;
-        }
-        list.push_back(note);
-    }
+    _capoMap.clear();
 }
 
 //---------------------------------------------------------
@@ -956,22 +963,31 @@ bool Staff::isPrimaryStaff() const
     if (!_links) {
         return true;
     }
-    std::list<Staff*> s;
-    std::list<Staff*> ss;
-    for (auto e : *_links) {
-        Staff* staff = toStaff(e);
+
+    std::vector<const Staff*> linkedStavesInThisScore;
+    std::vector<const Staff*> linkedNonTabStavesInThisScore;
+
+    for (const EngravingObject* linked : *_links) {
+        const Staff* staff = toStaff(linked);
+
         if (staff->score() == score()) {
-            s.push_back(staff);
+            linkedStavesInThisScore.push_back(staff);
+
             if (!staff->isTabStaff(Fraction(0, 1))) {
-                ss.push_back(staff);
+                linkedNonTabStavesInThisScore.push_back(staff);
             }
         }
     }
-    if (s.size() == 1) { // the linked staves are in different scores
-        return s.front() == this;
-    } else { // return a non tab linked staff in this score
-        return ss.front() == this;
+
+    IF_ASSERT_FAILED(!linkedStavesInThisScore.empty()) {
+        return true;
     }
+
+    if (!linkedNonTabStavesInThisScore.empty()) {
+        return linkedNonTabStavesInThisScore.front() == this;
+    }
+
+    return linkedStavesInThisScore.front() == this;
 }
 
 //---------------------------------------------------------

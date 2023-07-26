@@ -845,7 +845,7 @@ static void readNote(Note* note, XmlReader& e, ReadContext& ctx)
     }
     if (!(tpcIsValid(note->tpc1()) && tpcIsValid(note->tpc2()))) {
         Fraction tick = note->chord() ? note->chord()->tick() : Fraction(-1, 1);
-        Interval v = note->staff() ? note->part()->instrument(tick)->transpose() : Interval();
+        Interval v = note->staff() ? note->staff()->transpose(tick) : Interval();
         if (tpcIsValid(note->tpc1())) {
             v.flip();
             if (v.isZero()) {
@@ -876,7 +876,7 @@ static void readNote(Note* note, XmlReader& e, ReadContext& ctx)
             LOGD("bad tpc1 - concertPitch = %d, tpc1 = %d", concertPitch, tpc1Pitch);
             note->setPitch(note->pitch() + tpc1Pitch - concertPitch);
         }
-        Interval v = note->staff()->part()->instrument(ctx.tick())->transpose();
+        Interval v = note->staff()->transpose(ctx.tick());
         int transposedPitch = (note->pitch() - v.chromatic) % 12;
         if (tpc2Pitch != transposedPitch) {
             LOGD("bad tpc2 - transposedPitch = %d, tpc2 = %d", transposedPitch, tpc2Pitch);
@@ -1379,18 +1379,21 @@ static void readPedal114(XmlReader& e, ReadContext& ctx, Pedal* pedal)
                                     text.at(0).isDigit()
                                     ? resolveSymCompatibility(SymId(text.toInt()), ctx.mscoreVersion())
                                     : text));
+            pedal->setPropertyFlags(Pid::BEGIN_TEXT, PropertyFlags::UNSTYLED);
         } else if (tag == "continueSymbol") {
             String text(e.readText());
             pedal->setContinueText(String(u"<sym>%1</sym>").arg(
                                        text.at(0).isDigit()
                                        ? resolveSymCompatibility(SymId(text.toInt()), ctx.mscoreVersion())
                                        : text));
+            pedal->setPropertyFlags(Pid::CONTINUE_TEXT, PropertyFlags::UNSTYLED);
         } else if (tag == "endSymbol") {
             String text(e.readText());
             pedal->setEndText(String(u"<sym>%1</sym>").arg(
                                   text.at(0).isDigit()
                                   ? resolveSymCompatibility(SymId(text.toInt()), ctx.mscoreVersion())
                                   : text));
+            pedal->setPropertyFlags(Pid::END_TEXT, PropertyFlags::UNSTYLED);
         } else if (tag == "beginSymbolOffset") { // obsolete
             e.readPoint();
         } else if (tag == "continueSymbolOffset") { // obsolete
@@ -2804,11 +2807,11 @@ Err Read114::readScore(Score* score, XmlReader& e, ReadInOutData* out)
         } else if (tag == "playMode") {
             masterScore->setPlayMode(PlayMode(e.readInt()));
         } else if (tag == "SyntiSettings") {
-            masterScore->_synthesizerState.read(e);
+            masterScore->m_synthesizerState.read(e);
         } else if (tag == "Spatium") {
-            masterScore->setSpatium(e.readDouble() * DPMM);
+            masterScore->style().setSpatium(e.readDouble() * DPMM);
         } else if (tag == "Division") {
-            masterScore->_fileDivision = e.readInt();
+            masterScore->m_fileDivision = e.readInt();
         } else if (tag == "showInvisible") {
             masterScore->setShowInvisible(e.readInt());
         } else if (tag == "showFrames") {
@@ -2816,19 +2819,19 @@ Err Read114::readScore(Score* score, XmlReader& e, ReadInOutData* out)
         } else if (tag == "showMargins") {
             masterScore->setShowPageborders(e.readInt());
         } else if (tag == "Style") {
-            double sp = masterScore->spatium();
+            double sp = masterScore->style().spatium();
             compat::ReadChordListHook clhook(masterScore);
             readStyle(&masterScore->style(), e, clhook);
             //style()->load(e);
             // adjust this now so chords render properly on read
             // other style adjustments can wait until reading is finished
-            if (masterScore->styleB(Sid::useGermanNoteNames)) {
+            if (masterScore->style().styleB(Sid::useGermanNoteNames)) {
                 masterScore->style().set(Sid::useStandardNoteNames, false);
             }
             if (masterScore->layoutMode() == LayoutMode::FLOAT) {
                 // style should not change spatium in
                 // float mode
-                masterScore->setSpatium(sp);
+                masterScore->style().setSpatium(sp);
             }
         } else if (tag == "TextStyle") {
             e.skipCurrentElement();
@@ -3011,7 +3014,7 @@ Err Read114::readScore(Score* score, XmlReader& e, ReadInOutData* out)
             } else if (s->isTrill()) {
                 yo = masterScore->styleValue(Pid::OFFSET, Sid::trillPosAbove).value<PointF>().y();
             } else if (s->isTextLine()) {
-                yo = -5.0 * masterScore->spatium();
+                yo = -5.0 * masterScore->style().spatium();
             }
             if (!s->spannerSegments().empty()) {
                 for (SpannerSegment* seg : s->spannerSegments()) {
@@ -3049,8 +3052,8 @@ Err Read114::readScore(Score* score, XmlReader& e, ReadInOutData* out)
                         case BeamMode::NONE:
                             break;
                         case BeamMode::MID:
+                        case BeamMode::BEGIN16:
                         case BeamMode::BEGIN32:
-                        case BeamMode::BEGIN64:
                             cr->setBeamMode(BeamMode::BEGIN);
                             break;
                         case BeamMode::INVALID:
@@ -3070,12 +3073,12 @@ Err Read114::readScore(Score* score, XmlReader& e, ReadInOutData* out)
     for (MeasureBase* mb = masterScore->first(); mb; mb = mb->next()) {
         if (mb->isVBox()) {
             VBox* b  = toVBox(mb);
-            Millimetre y = masterScore->styleMM(Sid::staffUpperBorder);
+            Millimetre y = masterScore->style().styleMM(Sid::staffUpperBorder);
             b->setBottomGap(y);
         }
     }
 
-    masterScore->_fileDivision = Constants::DIVISION;
+    masterScore->m_fileDivision = Constants::DIVISION;
 
     //
     //    sanity check for barLineSpan and update ottavas
@@ -3092,17 +3095,17 @@ Err Read114::readScore(Score* score, XmlReader& e, ReadInOutData* out)
     }
 
     // adjust some styles
-    if (masterScore->styleB(Sid::hideEmptyStaves)) {        // http://musescore.org/en/node/16228
+    if (masterScore->style().styleB(Sid::hideEmptyStaves)) {        // http://musescore.org/en/node/16228
         masterScore->style().set(Sid::dontHideStavesInFirstSystem, false);
     }
-    if (masterScore->styleB(Sid::showPageNumberOne)) {      // http://musescore.org/en/node/21207
+    if (masterScore->style().styleB(Sid::showPageNumberOne)) {      // http://musescore.org/en/node/21207
         masterScore->style().set(Sid::evenFooterL, String(u"$P"));
         masterScore->style().set(Sid::oddFooterR, String(u"$P"));
     }
-    if (masterScore->styleI(Sid::minEmptyMeasures) == 0) {
+    if (masterScore->style().styleI(Sid::minEmptyMeasures) == 0) {
         masterScore->style().set(Sid::minEmptyMeasures, 1);
     }
-    masterScore->style().set(Sid::frameSystemDistance, masterScore->styleS(Sid::frameSystemDistance) + Spatium(6.0));
+    masterScore->style().set(Sid::frameSystemDistance, masterScore->style().styleS(Sid::frameSystemDistance) + Spatium(6.0));
     masterScore->resetStyleValue(Sid::measureSpacing);
 
     // add invisible tempo text if necessary
@@ -3150,7 +3153,7 @@ Err Read114::readScore(Score* score, XmlReader& e, ReadInOutData* out)
     // we'll force this and live with it for the score
     // but we wait until now to do it so parts don't have this issue
 
-    if (masterScore->styleV(Sid::voltaPosAbove) == DefaultStyle::baseStyle().value(Sid::voltaPosAbove)) {
+    if (masterScore->style().styleV(Sid::voltaPosAbove) == DefaultStyle::baseStyle().value(Sid::voltaPosAbove)) {
         masterScore->style().set(Sid::voltaPosAbove, PointF(0.0, -2.0f));
     }
 

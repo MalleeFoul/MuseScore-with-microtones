@@ -1,4 +1,4 @@
-/*
+﻿/*
  * SPDX-License-Identifier: GPL-3.0-only
  * MuseScore-CLA-applies
  *
@@ -36,6 +36,8 @@
 using namespace mu;
 using namespace mu::audio;
 using namespace mu::async;
+
+static constexpr size_t DEFAULT_AUX_BUFFER_SIZE = 1024;
 
 Mixer::Mixer()
 {
@@ -77,10 +79,16 @@ RetVal<MixerChannelPtr> Mixer::addAuxChannel(const TrackId trackId)
 {
     ONLY_AUDIO_WORKER_THREAD;
 
-    m_auxChannels.emplace(trackId, std::make_shared<MixerChannel>(trackId, m_sampleRate));
+    MixerChannelPtr channel = std::make_shared<MixerChannel>(trackId, m_sampleRate, configuration()->audioChannelsCount());
+
+    AuxChannelInfo aux;
+    aux.channel = channel;
+    aux.buffer = std::vector<float>(DEFAULT_AUX_BUFFER_SIZE, 0.f);
+
+    m_auxChannelInfoList.emplace_back(std::move(aux));
 
     RetVal<MixerChannelPtr> result;
-    result.val = m_auxChannels[trackId];
+    result.val = channel;
     result.ret = make_ret(Ret::Code::Ok);
 
     return result;
@@ -97,14 +105,11 @@ Ret Mixer::removeChannel(const TrackId trackId)
         return make_ret(Ret::Code::Ok);
     }
 
-    search = m_auxChannels.find(trackId);
+    bool removed = mu::remove_if(m_auxChannelInfoList, [trackId](const AuxChannelInfo& aux) {
+        return aux.channel->trackId() == trackId;
+    });
 
-    if (search != m_auxChannels.end() && search->second) {
-        m_auxChannels.erase(trackId);
-        return make_ret(Ret::Code::Ok);
-    }
-
-    return make_ret(Err::InvalidTrackId);
+    return removed ? make_ret(Ret::Code::Ok) : make_ret(Err::InvalidTrackId);
 }
 
 void Mixer::setAudioChannelsCount(const audioch_t count)
@@ -151,7 +156,7 @@ samples_t Mixer::process(float* outBuffer, samples_t samplesPerChannel)
 
     samples_t masterChannelSampleCount = 0;
 
-    std::vector<std::future<std::vector<float> > > futureList;
+    std::map<TrackId, std::future<std::vector<float> > > futures;
 
     for (const auto& pair : m_trackChannels) {
         MixerChannelPtr channel = pair.second;
@@ -169,22 +174,36 @@ samples_t Mixer::process(float* outBuffer, samples_t samplesPerChannel)
             return buffer;
         });
 
-        futureList.emplace_back(std::move(future));
+        futures.emplace(pair.first, std::move(future));
     }
 
-    for (size_t i = 0; i < futureList.size(); ++i) {
-        mixOutputFromChannel(outBuffer, futureList[i].get().data(), samplesPerChannel);
+    prepareAuxBuffers(outBufferSize);
 
+    for (auto& pair : futures) {
+        const std::vector<float>& trackBuffer = pair.second.get();
+
+        bool outBufferIsSilent = false;
+        mixOutputFromChannel(outBuffer, trackBuffer.data(), samplesPerChannel, outBufferIsSilent);
         masterChannelSampleCount = std::max(samplesPerChannel, masterChannelSampleCount);
+
+        if (!outBufferIsSilent) {
+            m_isSilence = false;
+        } else if (m_isSilence) {
+            continue;
+        }
+
+        const AuxSendsParams& auxSends = m_trackChannels.at(pair.first)->outputParams().auxSends;
+        writeTrackToAuxBuffers(trackBuffer.data(), auxSends, samplesPerChannel);
     }
 
-    if (m_masterParams.muted || masterChannelSampleCount == 0) {
+    if (m_masterParams.muted || masterChannelSampleCount == 0 || m_isSilence) {
         for (audioch_t audioChNum = 0; audioChNum < m_audioChannelsCount; ++audioChNum) {
             notifyAboutAudioSignalChanges(audioChNum, 0);
         }
         return 0;
     }
 
+    processAuxChannels(outBuffer, samplesPerChannel);
     completeOutput(outBuffer, samplesPerChannel);
 
     for (IFxProcessorPtr& fxProcessor : m_masterFxProcessors) {
@@ -291,11 +310,13 @@ async::Channel<audioch_t, AudioSignalVal> Mixer::masterAudioSignalChanges() cons
     return m_audioSignalNotifier.audioSignalChanges;
 }
 
-void Mixer::mixOutputFromChannel(float* outBuffer, float* inBuffer, unsigned int samplesCount)
+void Mixer::mixOutputFromChannel(float* outBuffer, const float* inBuffer, unsigned int samplesCount, bool& outBufferIsSilent)
 {
     IF_ASSERT_FAILED(outBuffer && inBuffer) {
         return;
     }
+
+    outBufferIsSilent = true;
 
     if (m_masterParams.muted) {
         return;
@@ -304,9 +325,78 @@ void Mixer::mixOutputFromChannel(float* outBuffer, float* inBuffer, unsigned int
     for (audioch_t audioChNum = 0; audioChNum < m_audioChannelsCount; ++audioChNum) {
         for (samples_t s = 0; s < samplesCount; ++s) {
             int idx = s * m_audioChannelsCount + audioChNum;
+            float sample = inBuffer[idx];
 
-            outBuffer[idx] += inBuffer[idx];
+            outBuffer[idx] += sample;
+
+            if (outBufferIsSilent && !RealIsNull(sample)) {
+                outBufferIsSilent = false;
+            }
         }
+    }
+}
+
+void Mixer::prepareAuxBuffers(size_t outBufferSize)
+{
+    for (AuxChannelInfo& aux : m_auxChannelInfoList) {
+        aux.receivedAudioSignal = false;
+
+        if (aux.channel->outputParams().fxChain.empty()) {
+            continue;
+        }
+
+        if (aux.buffer.size() < outBufferSize) {
+            aux.buffer.resize(outBufferSize);
+        }
+
+        std::fill(aux.buffer.begin(), aux.buffer.begin() + outBufferSize, 0.f);
+    }
+}
+
+void Mixer::writeTrackToAuxBuffers(const float* trackBuffer, const AuxSendsParams& auxSends, samples_t samplesPerChannel)
+{
+    for (aux_channel_idx_t auxIdx = 0; auxIdx < auxSends.size(); ++auxIdx) {
+        if (auxIdx >= m_auxChannelInfoList.size()) {
+            break;
+        }
+
+        AuxChannelInfo& aux = m_auxChannelInfoList.at(auxIdx);
+        if (aux.channel->outputParams().fxChain.empty()) {
+            continue;
+        }
+
+        const AuxSendParams& auxSend = auxSends.at(auxIdx);
+        if (!auxSend.active || RealIsNull(auxSend.signalAmount)) {
+            continue;
+        }
+
+        float* auxBuffer = aux.buffer.data();
+        float signalAmount = auxSend.signalAmount;
+
+        for (audioch_t audioChNum = 0; audioChNum < m_audioChannelsCount; ++audioChNum) {
+            for (samples_t s = 0; s < samplesPerChannel; ++s) {
+                int idx = s * m_audioChannelsCount + audioChNum;
+
+                auxBuffer[idx] += trackBuffer[idx] * signalAmount;
+            }
+        }
+
+        aux.receivedAudioSignal = true;
+    }
+}
+
+void Mixer::processAuxChannels(float* buffer, samples_t samplesPerChannel)
+{
+    for (AuxChannelInfo& aux : m_auxChannelInfoList) {
+        if (!aux.receivedAudioSignal) {
+            continue;
+        }
+
+        float* auxBuffer = aux.buffer.data();
+        aux.channel->process(auxBuffer, samplesPerChannel);
+
+        static bool isSilent = false;
+        mixOutputFromChannel(buffer, auxBuffer, samplesPerChannel, isSilent);
     }
 }
 
@@ -315,6 +405,8 @@ void Mixer::completeOutput(float* buffer, samples_t samplesPerChannel)
     IF_ASSERT_FAILED(buffer) {
         return;
     }
+
+    m_isSilence = true;
 
     float totalSquaredSum = 0.f;
     float volume = dsp::linearFromDecibels(m_masterParams.volume);
@@ -329,6 +421,10 @@ void Mixer::completeOutput(float* buffer, samples_t samplesPerChannel)
 
             float resultSample = buffer[idx] * totalGain;
             buffer[idx] = resultSample;
+
+            if (m_isSilence && !RealIsNull(resultSample)) {
+                m_isSilence = false;
+            }
 
             float squaredSample = resultSample * resultSample;
             totalSquaredSum += squaredSample;

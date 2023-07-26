@@ -62,6 +62,7 @@ public:
     int span() const { return _span; }
     void setSpan(int val) { _span = val; }
     void setHeight(double) override;
+    double height() const override { return _height; }
 
     double userLen1() const { return _userLen1; }
     double userLen2() const { return _userLen2; }
@@ -76,7 +77,7 @@ public:
     double Stretch() const { return _stretch; }
     void setStretch(double val) { _stretch = val; }
 
-    void symbolLine(SymId start, SymId fill);
+    void setSymbols(const SymIdList& sl) { m_symbols = sl; }
     const SymIdList& symbols() { return m_symbols; }
 
     PropertyValue getProperty(Pid propertyId) const override;
@@ -92,17 +93,14 @@ public:
 
 private:
 
-    friend class layout::v0::TLayout;
     friend class Factory;
+
     Arpeggio(Chord* parent);
 
     void spatiumChanged(double /*oldValue*/, double /*newValue*/) override;
     std::vector<mu::LineF> dragAnchorLines() const override;
     std::vector<mu::LineF> gripAnchorLines(Grip) const override;
     void startEdit(EditData&) override;
-
-    double calcTop() const;
-    double calcBottom() const;
 
     double insetTop() const;
     double insetBottom() const;

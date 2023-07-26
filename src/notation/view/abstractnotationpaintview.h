@@ -74,8 +74,6 @@ class AbstractNotationPaintView : public uicomponents::QuickPaintedView, public 
 
     Q_PROPERTY(bool isMainView READ isMainView WRITE setIsMainView NOTIFY isMainViewChanged)
 
-    Q_PROPERTY(bool isPopupOpen READ isPopupOpen WRITE setIsPopupOpen NOTIFY isPopupOpenChanged)
-
 public:
     explicit AbstractNotationPaintView(QQuickItem* parent = nullptr);
     ~AbstractNotationPaintView() override;
@@ -91,6 +89,9 @@ public:
     Q_INVOKABLE void selectOnNavigationActive();
 
     Q_INVOKABLE void forceFocusIn();
+
+    Q_INVOKABLE void onContextMenuIsOpenChanged(bool open);
+    Q_INVOKABLE void onElementPopupIsOpenChanged(bool open);
 
     qreal width() const override;
     qreal height() const override;
@@ -115,13 +116,12 @@ public:
     bool isNoteEnterMode() const override;
     void showShadowNote(const PointF& pos) override;
 
-    void showContextMenu(const ElementType& elementType, const QPointF& pos, bool activateFocus = false) override;
+    void showContextMenu(const ElementType& elementType, const QPointF& pos) override;
     void hideContextMenu() override;
 
-    void showElementPopup(const ElementType& elementType, const QPointF& pos, const RectF& size, bool activateFocus) override;
+    void showElementPopup(const ElementType& elementType, const RectF& elementRect) override;
     void hideElementPopup() override;
-    void toggleElementPopup(const ElementType& elementType, const QPointF& pos, const RectF& size, bool activateFocus = false) override;
-    bool isPopupOpen() const;
+    void toggleElementPopup(const ElementType& elementType, const RectF& elementRect) override;
 
     INotationInteractionPtr notationInteraction() const override;
     INotationPlaybackPtr notationPlayback() const override;
@@ -147,7 +147,7 @@ signals:
     void showContextMenuRequested(int elementType, const QPointF& viewPos);
     void hideContextMenuRequested();
 
-    void showElementPopupRequested(mu::notation::PopupModelType modelType, const QPointF& viewPos, const QPointF& elemSize);
+    void showElementPopupRequested(mu::notation::PopupModelType modelType, const QRectF& elementRect);
     void hideElementPopupRequested();
     void isPopupOpenChanged(bool isPopupOpen);
 
@@ -185,7 +185,6 @@ protected:
 
 protected slots:
     virtual void onViewSizeChanged();
-    void setIsPopupOpen(bool isPopupOpen);
 
 private:
     INotationNoteInputPtr notationNoteInput() const;
@@ -231,6 +230,7 @@ private:
     qreal verticalScrollableSize() const;
 
     bool adjustCanvasPosition(const RectF& logicRect, bool adjustVertically = true);
+    bool adjustCanvasPositionSmoothPan(const RectF& cursorRect);
 
     void onNoteInputStateChanged();
 
@@ -271,7 +271,7 @@ private:
     QTimer m_enableAutoScrollTimer;
 
     bool m_isPopupOpen = false;
-    notation::EngravingItem* m_previousSelectedElement = nullptr;
+    bool m_isContextMenuOpen = false;
 };
 }
 

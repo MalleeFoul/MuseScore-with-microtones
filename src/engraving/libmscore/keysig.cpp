@@ -34,6 +34,7 @@
 #include "segment.h"
 #include "staff.h"
 #include "system.h"
+#include "part.h"
 
 #include "log.h"
 
@@ -48,16 +49,16 @@ namespace mu::engraving {
 KeySig::KeySig(Segment* s)
     : EngravingItem(ElementType::KEYSIG, s, ElementFlag::ON_STAFF)
 {
-    _showCourtesy = true;
-    _hideNaturals = false;
+    m_showCourtesy = true;
+    m_hideNaturals = false;
 }
 
 KeySig::KeySig(const KeySig& k)
     : EngravingItem(k)
 {
-    _showCourtesy = k._showCourtesy;
-    _sig          = k._sig;
-    _hideNaturals = false;
+    m_showCourtesy = k.m_showCourtesy;
+    m_sig          = k.m_sig;
+    m_hideNaturals = false;
 }
 
 //---------------------------------------------------------
@@ -81,9 +82,9 @@ void KeySig::draw(mu::draw::Painter* painter) const
     double _spatium = spatium();
     double step = _spatium * (staff() ? staff()->staffTypeForElement(this)->lineDistance().val() * 0.5 : 0.5);
     int lines = staff() ? staff()->staffTypeForElement(this)->lines() : 5;
-    double ledgerLineWidth = score()->styleMM(Sid::ledgerLineWidth) * mag();
-    double ledgerExtraLen = score()->styleS(Sid::ledgerLineLength).val() * _spatium;
-    for (const KeySym& ks: _sig.keySymbols()) {
+    double ledgerLineWidth = style().styleMM(Sid::ledgerLineWidth) * mag();
+    double ledgerExtraLen = style().styleS(Sid::ledgerLineLength).val() * _spatium;
+    for (const KeySym& ks: m_sig.keySymbols()) {
         double x = ks.xPos * _spatium;
         double y = ks.line * step;
         drawSymbol(ks.sym, painter, PointF(x, y));
@@ -101,7 +102,7 @@ void KeySig::draw(mu::draw::Painter* painter) const
             painter->drawLine(LineF(x1, y, x2, y));
         }
     }
-    if (!explicitParent() && (isAtonal() || isCustom()) && _sig.keySymbols().empty()) {
+    if (!explicitParent() && (isAtonal() || isCustom()) && m_sig.keySymbols().empty()) {
         // empty custom or atonal key signature - draw something for palette
         painter->setPen(engravingConfiguration()->formattingMarksColor());
         drawSymbol(SymId::timeSigX, painter, PointF(symWidth(SymId::timeSigX) * -0.5, 2.0 * spatium()));
@@ -148,10 +149,30 @@ EngravingItem* KeySig::drop(EditData& data)
 //   setKey
 //---------------------------------------------------------
 
-void KeySig::setKey(Key key)
+void KeySig::setKey(Key cKey)
 {
     KeySigEvent e;
-    e.setKey(key);
+    e.setConcertKey(cKey);
+    if (staff() && !style().styleB(Sid::concertPitch)) {
+        Interval v = staff()->part()->instrument(tick())->transpose();
+        if (!v.isZero()) {
+            v.flip();
+            Key tKey = transposeKey(cKey, v, staff()->part()->preferSharpFlat());
+            e.setKey(tKey);
+        }
+    }
+    setKeySigEvent(e);
+}
+
+//---------------------------------------------------------
+//   setKey
+//---------------------------------------------------------
+
+void KeySig::setKey(Key cKey, Key tKey)
+{
+    KeySigEvent e;
+    e.setConcertKey(cKey);
+    e.setKey(tKey);
     setKeySigEvent(e);
 }
 
@@ -161,7 +182,7 @@ void KeySig::setKey(Key key)
 
 bool KeySig::operator==(const KeySig& k) const
 {
-    return _sig == k._sig;
+    return m_sig == k.m_sig;
 }
 
 //---------------------------------------------------------
@@ -186,7 +207,7 @@ bool KeySig::isChange() const
 
 void KeySig::changeKeySigEvent(const KeySigEvent& t)
 {
-    if (_sig == t) {
+    if (m_sig == t) {
         return;
     }
     setKeySigEvent(t);
@@ -219,6 +240,8 @@ PropertyValue KeySig::getProperty(Pid propertyId) const
     switch (propertyId) {
     case Pid::KEY:
         return int(key());
+    case Pid::KEY_CONCERT:
+        return int(concertKey());
     case Pid::SHOW_COURTESY:
         return int(showCourtesy());
     case Pid::KEYSIG_MODE:
@@ -236,6 +259,12 @@ bool KeySig::setProperty(Pid propertyId, const PropertyValue& v)
 {
     switch (propertyId) {
     case Pid::KEY:
+        if (generated()) {
+            return false;
+        }
+        setKey(m_sig.concertKey(), Key(v.toInt()));
+        break;
+    case Pid::KEY_CONCERT:
         if (generated()) {
             return false;
         }
@@ -273,6 +302,8 @@ PropertyValue KeySig::propertyDefault(Pid id) const
 {
     switch (id) {
     case Pid::KEY:
+        return int(Key::INVALID);
+    case Pid::KEY_CONCERT:
         return int(Key::INVALID);
     case Pid::SHOW_COURTESY:
         return true;

@@ -518,7 +518,7 @@ const UiActionList NotationUiActions::m_actions = {
     UiAction("find",
              mu::context::UiCtxNotationOpened,
              mu::context::CTX_ANY,
-             TranslatableString("action", "&Find / Go To"),
+             TranslatableString("action", "&Find / Go to"),
              TranslatableString("action", "Find / Go to")
              ),
     UiAction("staff-properties",
@@ -775,7 +775,7 @@ const UiActionList NotationUiActions::m_actions = {
              mu::context::CTX_NOTATION_OPENED,
              TranslatableString("action", "No beam"),
              TranslatableString("action", "No beam"),
-             IconCode::Code::NOTE_HEAD_EIGHTH
+             IconCode::Code::BEAM_NONE
              ),
     UiAction("beam-break-left",
              mu::context::UiCtxNotationOpened,
@@ -1090,6 +1090,12 @@ const UiActionList NotationUiActions::m_actions = {
              mu::context::CTX_ANY,
              TranslatableString("action", "Eighth rest"),
              TranslatableString("action", "Enter rest: eighth")
+             ),
+    UiAction("rest-TAB",
+             mu::context::UiCtxNotationOpened,
+             mu::context::CTX_NOTATION_NOTE_INPUT_STAFF_TAB,
+             X_TAB.arg(TranslatableString("action", "Rest")),
+             X_TAB.arg(TranslatableString("action", "Enter rest"))
              ),
     UiAction("fret-0",
              mu::context::UiCtxNotationOpened,
@@ -2178,6 +2184,7 @@ const UiActionList NotationUiActions::m_actions = {
              mu::context::UiCtxNotationOpened,
              mu::context::CTX_NOTATION_OPENED,
              TranslatableString("action", "Rest"),
+             TranslatableString("action", "Toggle rest"),
              IconCode::Code::REST
              ),
     UiAction("next-segment-element",

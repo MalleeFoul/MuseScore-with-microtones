@@ -274,9 +274,9 @@ bool EngravingObject::onSameScore(const EngravingObject* other) const
     return this->score() == other->score();
 }
 
-const MStyle* EngravingObject::style() const
+const MStyle& EngravingObject::style() const
 {
-    return &score()->style();
+    return score()->style();
 }
 
 //---------------------------------------------------------
@@ -420,9 +420,9 @@ void EngravingObject::undoChangeProperty(Pid id, const PropertyValue& v, Propert
             if (isEngravingItem()) {
                 sp = toEngravingItem(this)->spatium();
             } else {
-                sp = score()->spatium();
+                sp = style().spatium();
             }
-            setProperty(Pid::OFFSET, score()->styleV(getPropertyStyle(Pid::OFFSET)).value<PointF>() * sp);
+            setProperty(Pid::OFFSET, style().styleV(getPropertyStyle(Pid::OFFSET)).value<PointF>() * sp);
             EngravingItem* e = toEngravingItem(this);
             e->setOffsetChanged(false);
         }
@@ -436,7 +436,7 @@ void EngravingObject::undoChangeProperty(Pid id, const PropertyValue& v, Propert
             if (p.sid == Sid::NOSTYLE) {
                 break;
             }
-            changeProperties(this, p.pid, score()->styleV(p.sid), PropertyFlags::STYLED);
+            changeProperties(this, p.pid, style().styleV(p.sid), PropertyFlags::STYLED);
         }
     } else if (id == Pid::OFFSET) {
         // TODO: do this in caller?
@@ -553,7 +553,7 @@ EngravingObject* EngravingObject::findLinkedInScore(Score* score) const
         return nullptr;
     }
     auto findElem = std::find_if(_links->begin(), _links->end(),
-                                 [score](EngravingObject* engObj) { return engObj && engObj->score() == score; });
+                                 [this, score](EngravingObject* engObj) { return engObj && engObj != this && engObj->score() == score; });
     return findElem != _links->end() ? *findElem : nullptr;
 }
 
@@ -705,6 +705,7 @@ bool EngravingObject::isTextBase() const
            || type() == ElementType::SYSTEM_TEXT
            || type() == ElementType::TRIPLET_FEEL
            || type() == ElementType::PLAYTECH_ANNOTATION
+           || type() == ElementType::CAPO
            || type() == ElementType::REHEARSAL_MARK
            || type() == ElementType::INSTRUMENT_CHANGE
            || type() == ElementType::FIGURED_BASS
@@ -725,11 +726,11 @@ PropertyValue EngravingObject::styleValue(Pid pid, Sid sid) const
 {
     switch (propertyType(pid)) {
     case P_TYPE::MILLIMETRE:
-        return score()->styleMM(sid);
+        return style().styleMM(sid);
     case P_TYPE::POINT: {
-        PointF val = score()->styleV(sid).value<PointF>();
+        PointF val = style().styleV(sid).value<PointF>();
         if (offsetIsSpatiumDependent()) {
-            val *= score()->spatium();
+            val *= style().spatium();
             if (isEngravingItem()) {
                 const EngravingItem* e = toEngravingItem(this);
                 if (e->staff() && !e->systemFlag()) {
@@ -742,7 +743,7 @@ PropertyValue EngravingObject::styleValue(Pid pid, Sid sid) const
         return val;
     }
     default:
-        return score()->styleV(sid);
+        return style().styleV(sid);
     }
 }
 }

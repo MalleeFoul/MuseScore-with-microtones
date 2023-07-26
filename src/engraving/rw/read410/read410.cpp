@@ -98,6 +98,8 @@ Err Read410::readScore(Score* score, XmlReader& e, rw::ReadInOutData* data)
         ex->setTracksMapping(ctx.tracks());
     }
 
+    ctx.clearOrphanedConnectors();
+
     if (data) {
         data->links = ctx.readLinks();
         data->settingsCompat = ctx.settingCompat();
@@ -117,46 +119,36 @@ bool Read410::readScore410(Score* score, XmlReader& e, ReadContext& ctx)
         } else if (tag == "Omr") {
             e.skipCurrentElement();
         } else if (tag == "Audio") {
-            score->_audio = new Audio;
-            TRead::read(score->_audio, e, ctx);
+            score->m_audio = new Audio;
+            TRead::read(score->m_audio, e, ctx);
         } else if (tag == "showOmr") {
             e.skipCurrentElement();
         } else if (tag == "playMode") {
-            score->_playMode = PlayMode(e.readInt());
+            score->m_playMode = PlayMode(e.readInt());
         } else if (tag == "LayerTag") {
-            int id = e.intAttribute("id");
-            const String& t = e.attribute("tag");
-            String val(e.readText());
-            if (id >= 0 && id < 32) {
-                score->_layerTags[id] = t;
-                score->_layerTagComments[id] = val;
-            }
+            e.skipCurrentElement();
         } else if (tag == "Layer") {
-            Layer layer;
-            layer.name = e.attribute("name");
-            layer.tags = static_cast<unsigned int>(e.intAttribute("mask"));
-            score->_layer.push_back(layer);
-            e.readNext();
+            e.skipCurrentElement();
         } else if (tag == "currentLayer") {
-            score->_currentLayer = e.readInt();
+            e.skipCurrentElement();
         } else if (tag == "Synthesizer") {
-            score->_synthesizerState.read(e);
+            score->m_synthesizerState.read(e);
         } else if (tag == "page-offset") {
-            score->_pageNumberOffset = e.readInt();
+            score->m_pageNumberOffset = e.readInt();
         } else if (tag == "Division") {
-            score->_fileDivision = e.readInt();
+            score->m_fileDivision = e.readInt();
         } else if (tag == "open") {
-            score->_isOpen = e.readBool();
+            score->m_isOpen = e.readBool();
         } else if (tag == "showInvisible") {
-            score->_showInvisible = e.readInt();
+            score->m_showInvisible = e.readInt();
         } else if (tag == "showUnprintable") {
-            score->_showUnprintable = e.readInt();
+            score->m_showUnprintable = e.readInt();
         } else if (tag == "showFrames") {
-            score->_showFrames = e.readInt();
+            score->m_showFrames = e.readInt();
         } else if (tag == "showMargins") {
-            score->_showPageborders = e.readInt();
+            score->m_showPageborders = e.readInt();
         } else if (tag == "markIrregularMeasures") {
-            score->_markIrregularMeasures = e.readInt();
+            score->m_markIrregularMeasures = e.readInt();
         } else if (tag == "Style") {
             // Since version 400, the style is stored in a separate file
             e.skipCurrentElement();
@@ -260,7 +252,7 @@ bool Read410::readScore410(Score* score, XmlReader& e, ReadContext& ctx)
 
     score->connectTies();
 
-    score->_fileDivision = Constants::DIVISION;
+    score->m_fileDivision = Constants::DIVISION;
 
     // Make sure every instrument has an instrumentId set.
     for (Part* part : score->parts()) {
@@ -271,7 +263,7 @@ bool Read410::readScore410(Score* score, XmlReader& e, ReadContext& ctx)
 
     score->setUpTempoMap();
 
-    for (Part* p : score->_parts) {
+    for (Part* p : score->m_parts) {
         p->updateHarmonyChannels(false);
     }
 
@@ -497,7 +489,7 @@ bool Read410::pasteStaff(XmlReader& e, Segment* dst, staff_idx_t dstStaff, Fract
                             for (size_t i = 0; i < graceNotes.size(); ++i) {
                                 Chord* gc = graceNotes.at(i);
                                 gc->setGraceIndex(i);
-                                Score::transposeChord(gc, ctx.transpose(), tick);
+                                Score::transposeChord(gc, tick);
                                 chord->add(gc);
                             }
                             graceNotes.clear();
@@ -546,7 +538,7 @@ bool Read410::pasteStaff(XmlReader& e, Segment* dst, staff_idx_t dstStaff, Fract
                                 cr->setDurationType(newLength);
                             }
                         }
-                        score->pasteChordRest(cr, tick, ctx.transpose());
+                        score->pasteChordRest(cr, tick);
                     }
                 } else if (tag == "Spanner") {
                     TRead::readSpanner(e, ctx, score, ctx.track());
@@ -561,9 +553,9 @@ bool Read410::pasteStaff(XmlReader& e, Segment* dst, staff_idx_t dstStaff, Fract
                     TRead::read(harmony, e, ctx);
                     harmony->setTrack(ctx.track());
 
-                    Part* partDest = score->staff(ctx.track() / VOICES)->part();
-                    Interval interval = partDest->instrument(tick)->transpose();
-                    if (!score->styleB(Sid::concertPitch) && !interval.isZero()) {
+                    Staff* staffDest = score->staff(ctx.track() / VOICES);
+                    Interval interval = staffDest->transpose(tick);
+                    if (!ctx.style().styleB(Sid::concertPitch) && !interval.isZero()) {
                         interval.flip();
                         int rootTpc = transposeTpc(harmony->rootTpc(), interval, true);
                         int baseTpc = transposeTpc(harmony->baseTpc(), interval, true);
@@ -591,6 +583,7 @@ bool Read410::pasteStaff(XmlReader& e, Segment* dst, staff_idx_t dstStaff, Fract
                            || tag == "Text"
                            || tag == "StaffText"
                            || tag == "PlayTechAnnotation"
+                           || tag == "Capo"
                            || tag == "TempoText"
                            || tag == "FiguredBass"
                            || tag == "Sticking"
@@ -721,7 +714,7 @@ bool Read410::pasteStaff(XmlReader& e, Segment* dst, staff_idx_t dstStaff, Fract
                 m->checkMeasure(i, false);
             }
         }
-        score->_selection.setRangeTicks(dstTick, dstTick + tickLen, dstStaff, endStaff);
+        score->m_selection.setRangeTicks(dstTick, dstTick + tickLen, dstStaff, endStaff);
 
         //finding the first element that has a track
         //the canvas position will be set to this element
@@ -743,11 +736,11 @@ bool Read410::pasteStaff(XmlReader& e, Segment* dst, staff_idx_t dstStaff, Fract
             s = s->next1MM();
         }
 
-        for (MuseScoreView* v : score->viewer) {
+        for (MuseScoreView* v : score->m_viewer) {
             v->adjustCanvasPosition(el);
         }
         if (!score->selection().isRange()) {
-            score->_selection.setState(SelState::RANGE);
+            score->m_selection.setState(SelState::RANGE);
         }
     }
     return true;
@@ -825,9 +818,9 @@ void Read410::pasteSymbols(XmlReader& e, ChordRest* dst)
                         TRead::read(el, e, ctx);
                         el->setTrack(trackZeroVoice(destTrack));
                         // transpose
-                        Part* partDest = score->staff(track2staff(destTrack))->part();
-                        Interval interval = partDest->instrument(destTick)->transpose();
-                        if (!score->styleB(Sid::concertPitch) && !interval.isZero()) {
+                        Staff* staffDest = score->staff(track2staff(destTrack));
+                        Interval interval = staffDest->transpose(destTick);
+                        if (!ctx.style().styleB(Sid::concertPitch) && !interval.isZero()) {
                             interval.flip();
                             int rootTpc = transposeTpc(el->rootTpc(), interval, true);
                             int baseTpc = transposeTpc(el->baseTpc(), interval, true);
@@ -894,7 +887,8 @@ void Read410::pasteSymbols(XmlReader& e, ChordRest* dst)
                         } else {
                             score->undoAddElement(el);
                         }
-                    } else if (tag == "StaffText" || tag == "PlayTechAnnotation" || tag == "Sticking" || tag == "HarpPedalDiagram") {
+                    } else if (tag == "StaffText" || tag == "PlayTechAnnotation" || tag == "Capo" || tag == "Sticking"
+                               || tag == "HarpPedalDiagram") {
                         EngravingItem* el = Factory::createItemByName(tag, score->dummy());
                         TRead::readItem(el, e, ctx);
                         el->setTrack(destTrack);

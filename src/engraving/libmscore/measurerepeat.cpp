@@ -54,6 +54,16 @@ MeasureRepeat::MeasureRepeat(Segment* parent)
     }
 }
 
+void MeasureRepeat::setNumMeasures(int n)
+{
+    IF_ASSERT_FAILED(n <= MAX_NUM_MEASURES) {
+        m_numMeasures = MAX_NUM_MEASURES;
+        return;
+    }
+
+    m_numMeasures = n;
+}
+
 //---------------------------------------------------------
 //   firstMeasureOfGroup
 //---------------------------------------------------------
@@ -63,15 +73,26 @@ Measure* MeasureRepeat::firstMeasureOfGroup() const
     return measure()->firstOfMeasureRepeatGroup(staffIdx());
 }
 
-const Measure* MeasureRepeat::referringMeasure() const
+const Measure* MeasureRepeat::referringMeasure(const Measure* measure) const
 {
-    Measure* firstMeasureRepeat = firstMeasureOfGroup();
-
-    if (!firstMeasureRepeat) {
+    IF_ASSERT_FAILED(measure) {
         return nullptr;
     }
 
-    return firstMeasureRepeat->prevMeasure();
+    const Measure* firstMeasure = firstMeasureOfGroup();
+    if (!firstMeasure) {
+        return nullptr;
+    }
+
+    const Measure* referringMeasure = firstMeasure->prevMeasure();
+
+    int measuresBack = m_numMeasures - measure->measureRepeatCount(staffIdx());
+
+    for (int i = 0; i < measuresBack && referringMeasure; ++i) {
+        referringMeasure = referringMeasure->prevMeasure();
+    }
+
+    return referringMeasure;
 }
 
 //---------------------------------------------------------
@@ -92,10 +113,10 @@ void MeasureRepeat::draw(mu::draw::Painter* painter) const
             drawSymbols(numberSym(), painter, numberPos);
         }
 
-        if (score()->styleB(Sid::fourMeasureRepeatShowExtenders) && numMeasures() == 4) {
+        if (style().styleB(Sid::fourMeasureRepeatShowExtenders) && numMeasures() == 4) {
             // TODO: add style settings specific to measure repeats
             // for now, using thickness and margin same as mmrests
-            double hBarThickness = score()->styleMM(Sid::mmRestHBarThickness);
+            double hBarThickness = style().styleMM(Sid::mmRestHBarThickness);
             if (hBarThickness) { // don't draw at all if 0, QPainter interprets 0 pen width differently
                 Pen pen(painter->pen());
                 pen.setCapStyle(PenCapStyle::FlatCap);
@@ -103,7 +124,7 @@ void MeasureRepeat::draw(mu::draw::Painter* painter) const
                 painter->setPen(pen);
 
                 double twoMeasuresWidth = 2 * measure()->width();
-                double margin = score()->styleMM(Sid::multiMeasureRestMargin);
+                double margin = style().styleMM(Sid::multiMeasureRestMargin);
                 double xOffset = symBbox(symId()).width() * .5;
                 double gapDistance = (symBbox(symId()).width() + spatium()) * .5;
                 painter->drawLine(LineF(-twoMeasuresWidth + xOffset + margin, 0.0, xOffset - gapDistance, 0.0));
@@ -156,7 +177,7 @@ PropertyValue MeasureRepeat::propertyDefault(Pid propertyId) const
 {
     switch (propertyId) {
     case Pid::MEASURE_REPEAT_NUMBER_POS:
-        return score()->styleV(Sid::measureRepeatNumberPos);
+        return style().styleV(Sid::measureRepeatNumberPos);
     default:
         return Rest::propertyDefault(propertyId);
     }

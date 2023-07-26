@@ -40,9 +40,11 @@ Item {
     signal opened()
     signal closed()
 
-    property NavigationSection navigationSection: null
+    property NavigationSection notationViewNavigationSection: null
     property int navigationOrderStart: 0
-    property int navigationOrderEnd: Boolean(loader.item) ? loader.item.navigationOrderEnd : 0
+    property int navigationOrderEnd: Boolean(loader.item)
+                                        ? loader.item.navigationOrderEnd
+                                        : navigationOrderStart
 
     QtObject {
         id: prv
@@ -50,6 +52,7 @@ Item {
         function componentByType(type) {
             switch (type) {
             case Notation.TYPE_HARP_DIAGRAM: return harpPedalComp
+            case Notation.TYPE_CAPO: return capoComp
             }
 
             return null
@@ -76,13 +79,12 @@ Item {
         }
     }
 
-    function show(elementType, viewPos, size) {
+    function show(elementType, elementRect) {
         if (isPopupOpened) {
             prv.closeOpenedPopup()
-            return
         }
         opened()
-        var popup = loader.createPopup(prv.componentByType(elementType), viewPos, size)
+        var popup = loader.createPopup(prv.componentByType(elementType), elementRect)
         prv.openPopup(popup)
     }
 
@@ -94,10 +96,18 @@ Item {
     Loader {
         id: loader
 
-        function createPopup(comp, pos, size) {
+        function createPopup(comp, elementRect) {
             loader.sourceComponent = comp
             loader.item.parent = container
-            loader.item.updatePosition(pos, size)
+            loader.item.updatePosition(elementRect)
+
+            //! NOTE: All navigation panels in popups must be in the notation view section.
+            //        This is necessary so that popups do not activate navigation in the new section,
+            //        but at the same time, when clicking on the component (text input), the focus in popup's window should be activated
+            loader.item.navigationSection = null
+
+            loader.item.notationViewNavigationSection = container.notationViewNavigationSection
+            loader.item.navigationOrderStart = container.navigationOrderStart
 
             return loader.item
         }
@@ -106,9 +116,16 @@ Item {
     Component {
         id: harpPedalComp
         HarpPedalPopup {
-            navigationSection: container.navigationSection
-            navigationOrderStart: container.navigationOrderStart
+            onClosed: {
+                prv.resetOpenedPopup()
+                loader.sourceComponent = null
+            }
+        }
+    }
 
+    Component {
+        id: capoComp
+        CapoPopup {
             onClosed: {
                 prv.resetOpenedPopup()
                 loader.sourceComponent = null

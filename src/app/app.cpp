@@ -169,10 +169,18 @@ int App::run(int argc, char** argv)
         if (multiInstancesProvider()->isMainInstance()) {
             splashScreen = new SplashScreen(SplashScreen::Default);
         } else {
-            QString fileName = io::filename(startupScenario()->startupScorePath(), true /* includingExtension */).toQString();
-            splashScreen = new SplashScreen(SplashScreen::ForNewInstance, fileName);
+            project::ProjectFile file = startupScenario()->startupScoreFile();
+            if (file.isValid()) {
+                splashScreen = new SplashScreen(SplashScreen::ForNewInstance, file.displayName(true /* includingExtension */));
+            } else if (startupScenario()->isStartWithNewFileAsSecondaryInstance()) {
+                splashScreen = new SplashScreen(SplashScreen::ForNewInstance);
+            } else {
+                splashScreen = new SplashScreen(SplashScreen::Default);
+            }
         }
+    }
 
+    if (splashScreen) {
         splashScreen->show();
     }
 #endif
@@ -271,6 +279,7 @@ int App::run(int argc, char** argv)
                 if (!obj && url == objUrl) {
                     LOGE() << "failed Qml load\n";
                     QCoreApplication::exit(-1);
+                    return;
                 }
 
                 if (url == objUrl) {
@@ -422,7 +431,16 @@ void App::applyCommandLineOptions(const CommandLineParser::Options& options, fra
 
     if (runMode == framework::IApplication::RunMode::GuiApp) {
         startupScenario()->setStartupType(options.startup.type);
-        startupScenario()->setStartupScorePath(options.startup.scorePath);
+
+        if (options.startup.scorePath.has_value()) {
+            project::ProjectFile file { options.startup.scorePath.value() };
+
+            if (options.startup.scoreDisplayNameOverride.has_value()) {
+                file.displayNameOverride = options.startup.scoreDisplayNameOverride.value();
+            }
+
+            startupScenario()->setStartupScoreFile(file);
+        }
     }
 
     if (options.app.loggerLevel) {

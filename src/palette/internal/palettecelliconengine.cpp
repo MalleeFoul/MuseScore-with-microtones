@@ -30,7 +30,8 @@
 #include "engraving/libmscore/engravingitem.h"
 #include "engraving/libmscore/masterscore.h"
 #include "engraving/style/defaultstyle.h"
-#include "engraving/layout/v0/tlayout.h"
+
+#include "palettelayout.h"
 
 #include "log.h"
 
@@ -114,8 +115,8 @@ void PaletteCellIconEngine::paintActionIcon(Painter& painter, const RectF& rect,
 
     ActionIcon* action = toActionIcon(element);
     action->setFontSize(ActionIcon::DEFAULT_FONT_SIZE * m_cell->mag * m_extraMag);
-    layout::v0::LayoutContext lctx(action->score());
-    layout::v0::TLayout::layout(action, lctx);
+
+    PaletteLayout::layoutItem(action);
 
     painter.translate(rect.center() - action->bbox().center());
     action->draw(&painter);
@@ -158,9 +159,9 @@ qreal PaletteCellIconEngine::paintStaff(Painter& painter, const RectF& rect, qre
 /// system. If alignToStaff is true then the element is only centered horizontally;
 /// i.e. vertical alignment is unchanged from the default so that item will appear
 /// at the correct height on the staff.
-void PaletteCellIconEngine::paintScoreElement(Painter& painter, EngravingItem* element, qreal spatium, bool alignToStaff, qreal dpi) const
+void PaletteCellIconEngine::paintScoreElement(Painter& painter, EngravingItem* item, qreal spatium, bool alignToStaff, qreal dpi) const
 {
-    IF_ASSERT_FAILED(element && !element->isActionIcon()) {
+    IF_ASSERT_FAILED(item && !item->isActionIcon()) {
         return;
     }
 
@@ -168,14 +169,13 @@ void PaletteCellIconEngine::paintScoreElement(Painter& painter, EngravingItem* e
 
     mu::engraving::MScore::pixelRatio = mu::engraving::DPI / dpi;
 
-    const qreal sizeRatio = spatium / gpaletteScore->spatium();
+    const qreal sizeRatio = spatium / gpaletteScore->style().spatium();
     painter.scale(sizeRatio, sizeRatio); // scale coordinates so element is drawn at correct size
 
     // calculate bbox
-    layout::v0::LayoutContext lctx(element->score());
-    layout::v0::TLayout::layoutItem(element, lctx);
+    PaletteLayout::layoutItem(item);
 
-    PointF origin = element->bbox().center();
+    PointF origin = item->bbox().center();
 
     if (alignToStaff) {
         // y = 0 is position of the element's parent.
@@ -189,7 +189,7 @@ void PaletteCellIconEngine::paintScoreElement(Painter& painter, EngravingItem* e
     PaintContext ctx;
     ctx.painter = &painter;
 
-    element->scanElements(&ctx, paintPaletteElement);
+    item->scanElements(&ctx, paintPaletteElement);
     painter.restore();
 }
 

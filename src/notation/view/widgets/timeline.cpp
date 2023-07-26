@@ -1299,24 +1299,21 @@ void Timeline::keyMeta(Segment* seg, int* stagger, int pos)
 
         Key globalKey;
         if (seg) {
-            globalKey = stave->key(seg->tick());
+            globalKey = stave->concertKey(seg->tick());
         } else {
-            globalKey = stave->key(Fraction(0, 1));
+            globalKey = stave->concertKey(Fraction(0, 1));
         }
         if (currKeySig) {
             if (currKeySig->generated()) {
                 return;
             }
-            globalKey = currKeySig->key();
+            globalKey = currKeySig->concertKey();
         }
 
         if (currKeySig && currKeySig->isAtonal()) {
             globalKey = Key::INVALID;
         } else if (currKeySig && currKeySig->isCustom()) {
             globalKey = Key::NUM_OF;
-        } else {
-            const Interval currInterval = stave->part()->instrument()->transpose();
-            globalKey = transposeKey(globalKey, currInterval, stave->part()->preferSharpFlat());
         }
 
         std::map<Key, int>::iterator it = keyFrequencies.find(globalKey);
@@ -2029,7 +2026,7 @@ void Timeline::drawSelection()
         // ws: If style flag Sid::createMultiMeasureRests is not set, then
         // measure->mmRest() is not valid
 
-        if (measure->mmRest() && measure->score()->styleB(Sid::createMultiMeasureRests)) {
+        if (measure->mmRest() && measure->score()->style().styleB(Sid::createMultiMeasureRests)) {
             int mmrestCount = measure->mmRest()->mmRestCount();
             Measure* tmpMeasure = measure;
             for (int mmrestMeasure = 0; mmrestMeasure < mmrestCount; mmrestMeasure++) {
@@ -2649,7 +2646,7 @@ void Timeline::updateView()
     for (Measure* currMeasure = score()->firstMeasure(); currMeasure; currMeasure = currMeasure->nextMeasure(), ++measureIndex) {
         System* system = currMeasure->system();
 
-        if (currMeasure->mmRest() && score()->styleB(Sid::createMultiMeasureRests)) {
+        if (currMeasure->mmRest() && score()->style().styleB(Sid::createMultiMeasureRests)) {
             // Handle mmRests
             Measure* mmrestMeasure = currMeasure->mmRest();
             system = mmrestMeasure->system();

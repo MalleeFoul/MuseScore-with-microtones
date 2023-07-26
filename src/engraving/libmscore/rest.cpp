@@ -29,8 +29,6 @@
 #include "realfn.h"
 #include "translation.h"
 
-#include "layout/v0/tlayout.h"
-
 #include "actionicon.h"
 #include "articulation.h"
 #include "chord.h"
@@ -64,7 +62,7 @@ Rest::Rest(Segment* parent)
 Rest::Rest(const ElementType& type, Segment* parent)
     : ChordRest(type, parent)
 {
-    _beamMode  = BeamMode::NONE;
+    m_beamMode  = BeamMode::NONE;
     m_sym      = SymId::restQuarter;
 }
 
@@ -76,7 +74,7 @@ Rest::Rest(Segment* parent, const TDuration& d)
 Rest::Rest(const ElementType& type, Segment* parent, const TDuration& d)
     : ChordRest(type, parent)
 {
-    _beamMode  = BeamMode::NONE;
+    m_beamMode  = BeamMode::NONE;
     m_sym      = SymId::restQuarter;
     setDurationType(d);
     if (d.fraction().isValid()) {
@@ -98,11 +96,11 @@ Rest::Rest(const Rest& r, bool link)
         add(Factory::copyNoteDot(*dot));
     }
 
-    if (r._deadSlapped) {
-        DeadSlapped* ndc = Factory::copyDeadSlapped(*r._deadSlapped);
+    if (r.m_deadSlapped) {
+        DeadSlapped* ndc = Factory::copyDeadSlapped(*r.m_deadSlapped);
         add(ndc);
         if (link) {
-            score()->undo(new Link(ndc, r._deadSlapped));
+            score()->undo(new Link(ndc, r.m_deadSlapped));
         }
     }
 }
@@ -172,8 +170,7 @@ mu::RectF Rest::drag(EditData& ed)
     }
     setOffset(PointF(s.x(), s.y()));
 
-    layout::v0::LayoutContext ctx(score());
-    layout::v0::TLayout::layout(this, ctx);
+    layout()->layoutItem(this);
 
     score()->rebuildBspTree();
     return abbox().united(r);
@@ -201,6 +198,7 @@ bool Rest::acceptDrop(EditData& data) const
         || (type == ElementType::TRIPLET_FEEL)
         || (type == ElementType::STAFF_TEXT)
         || (type == ElementType::PLAYTECH_ANNOTATION)
+        || (type == ElementType::CAPO)
         || (type == ElementType::BAR_LINE)
         || (type == ElementType::BREATH)
         || (type == ElementType::CHORD)
@@ -488,7 +486,7 @@ int Rest::computeVoiceOffset(int lines)
 
     bool up = voice() == 0 || voice() == 2;
     int upSign = up ? -1 : 1;
-    int voiceLineOffset = score()->styleB(Sid::multiVoiceRestTwoSpaceOffset) ? 2 : 1;
+    int voiceLineOffset = style().styleB(Sid::multiVoiceRestTwoSpaceOffset) ? 2 : 1;
 
     return voiceLineOffset * upSign;
 }
@@ -524,6 +522,10 @@ int Rest::computeWholeRestOffset(int voiceOffset, int lines)
             }
             Chord* chord = toChord(item);
             Shape chordShape = chord->shape().translated(chord->pos());
+            chordShape.removeInvisibles();
+            if (chordShape.empty()) {
+                continue;
+            }
             if (track < thisTrack) {
                 hasNotesAbove = true;
                 bottomY = std::max(bottomY, chordShape.bottom());
@@ -635,7 +637,7 @@ double Rest::intrinsicMag() const
 {
     double m = 1.0;
     if (isSmall()) {
-        m *= score()->styleD(Sid::smallNoteMag);
+        m *= style().styleD(Sid::smallNoteMag);
     }
     return m;
 }
@@ -679,7 +681,7 @@ PointF Rest::stemPos() const
 PointF Rest::stemPosBeam() const
 {
     PointF p(pagePos());
-    if (_up) {
+    if (m_up) {
         p.ry() += bbox().top() + spatium() * 1.5;
     } else {
         p.ry() += bbox().bottom() - spatium() * 1.5;
@@ -693,7 +695,7 @@ PointF Rest::stemPosBeam() const
 
 double Rest::stemPosX() const
 {
-    if (_up) {
+    if (m_up) {
         return bbox().right();
     } else {
         return bbox().left();
@@ -781,7 +783,7 @@ void Rest::add(EngravingItem* e)
         e->added();
         break;
     case ElementType::DEAD_SLAPPED:
-        _deadSlapped = toDeadSlapped(e);
+        m_deadSlapped = toDeadSlapped(e);
     // fallthrough
     case ElementType::SYMBOL:
     case ElementType::IMAGE:
@@ -806,7 +808,7 @@ void Rest::remove(EngravingItem* e)
         e->removed();
         break;
     case ElementType::DEAD_SLAPPED:
-        _deadSlapped = nullptr;
+        m_deadSlapped = nullptr;
     // fallthrough
     case ElementType::SYMBOL:
     case ElementType::IMAGE:
@@ -893,10 +895,9 @@ bool Rest::setProperty(Pid propertyId, const PropertyValue& v)
     case Pid::OFFSET:
         score()->addRefresh(canvasBoundingRect());
         setOffset(v.value<PointF>());
-        {
-            layout::v0::LayoutContext ctx(score());
-            layout::v0::TLayout::layout(this, ctx);
-        }
+
+        layout()->layoutItem(this);
+
         score()->addRefresh(canvasBoundingRect());
         if (measure() && durationType().type() == DurationType::V_MEASURE) {
             measure()->triggerLayout();

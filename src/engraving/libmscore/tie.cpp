@@ -27,8 +27,6 @@
 #include "draw/types/pen.h"
 #include "draw/types/transform.h"
 
-#include "layout/v0/tlayout.h"
-
 #include "accidental.h"
 #include "chord.h"
 #include "fretcircle.h"
@@ -91,29 +89,29 @@ void TieSegment::draw(mu::draw::Painter* painter) const
         painter->setBrush(Brush(pen.color()));
         pen.setCapStyle(PenCapStyle::RoundCap);
         pen.setJoinStyle(PenJoinStyle::RoundJoin);
-        pen.setWidthF(score()->styleMM(Sid::SlurEndWidth) * mag);
+        pen.setWidthF(style().styleMM(Sid::SlurEndWidth) * mag);
         break;
     case SlurStyleType::Dotted:
         painter->setBrush(BrushStyle::NoBrush);
         pen.setCapStyle(PenCapStyle::RoundCap);           // True dots
         pen.setDashPattern(dotted);
-        pen.setWidthF(score()->styleMM(Sid::SlurDottedWidth) * mag);
+        pen.setWidthF(style().styleMM(Sid::SlurDottedWidth) * mag);
         break;
     case SlurStyleType::Dashed:
         painter->setBrush(BrushStyle::NoBrush);
         pen.setDashPattern(dashed);
-        pen.setWidthF(score()->styleMM(Sid::SlurDottedWidth) * mag);
+        pen.setWidthF(style().styleMM(Sid::SlurDottedWidth) * mag);
         break;
     case SlurStyleType::WideDashed:
         painter->setBrush(BrushStyle::NoBrush);
         pen.setDashPattern(wideDashed);
-        pen.setWidthF(score()->styleMM(Sid::SlurDottedWidth) * mag);
+        pen.setWidthF(style().styleMM(Sid::SlurDottedWidth) * mag);
         break;
     case SlurStyleType::Undefined:
         break;
     }
     painter->setPen(pen);
-    painter->drawPath(path);
+    painter->drawPath(m_path);
 }
 
 bool TieSegment::isEditAllowed(EditData& ed) const
@@ -140,8 +138,7 @@ bool TieSegment::edit(EditData& ed)
 
     if (ed.key == Key_Home && !ed.modifiers) {
         ups(ed.curGrip).off = PointF();
-        layout::v0::LayoutContext ctx(score());
-        layout::v0::TLayout::layout(sl, ctx);
+        layout()->layoutItem(sl);
         triggerLayout();
         return true;
     }
@@ -154,7 +151,6 @@ bool TieSegment::edit(EditData& ed)
 
 void TieSegment::changeAnchor(EditData& ed, EngravingItem* element)
 {
-    layout::v0::LayoutContext ctx(score());
     if (ed.curGrip == Grip::START) {
         spanner()->setStartElement(element);
         Note* note = toNote(element);
@@ -176,7 +172,7 @@ void TieSegment::changeAnchor(EditData& ed, EngravingItem* element)
 
     const size_t segments  = spanner()->spannerSegments().size();
     ups(ed.curGrip).off = PointF();
-    layout::v0::TLayout::layout(spanner(), ctx);
+    layout()->layoutItem(spanner());
     if (spanner()->spannerSegments().size() != segments) {
         const std::vector<SpannerSegment*>& ss = spanner()->spannerSegments();
 
@@ -289,7 +285,7 @@ void TieSegment::computeBezier(PointF shoulderOffset)
     PointF bezier1(bezier1X, -shoulderH);
     PointF bezier2(bezier2X, -shoulderH);
 
-    double w = score()->styleMM(Sid::SlurMidWidth) - score()->styleMM(Sid::SlurEndWidth);
+    double w = style().styleMM(Sid::SlurMidWidth) - style().styleMM(Sid::SlurEndWidth);
     if (staff()) {
         w *= staff()->staffMag(tie()->tick());
     }
@@ -318,32 +314,32 @@ void TieSegment::computeBezier(PointF shoulderOffset)
     tieShoulder = t.map(tieShoulder) + bezier1Final - shoulderOffset;
     //-----------------------------------
 
-    path = PainterPath();
-    path.moveTo(PointF());
-    path.cubicTo(bezier1 + bezier1Offset - tieThickness, bezier2 + bezier2Offset - tieThickness, tieEndNormalized);
+    m_path = PainterPath();
+    m_path.moveTo(PointF());
+    m_path.cubicTo(bezier1 + bezier1Offset - tieThickness, bezier2 + bezier2Offset - tieThickness, tieEndNormalized);
     if (tie()->styleType() == SlurStyleType::Solid) {
-        path.cubicTo(bezier2 + bezier2Offset + tieThickness, bezier1 + bezier1Offset + tieThickness, PointF());
+        m_path.cubicTo(bezier2 + bezier2Offset + tieThickness, bezier1 + bezier1Offset + tieThickness, PointF());
     }
 
     tieThickness = PointF(0.0, 3.0 * w);
-    shapePath = PainterPath();
-    shapePath.moveTo(PointF());
-    shapePath.cubicTo(bezier1 + bezier1Offset - tieThickness, bezier2 + bezier2Offset - tieThickness, tieEndNormalized);
-    shapePath.cubicTo(bezier2 + bezier2Offset + tieThickness, bezier1 + bezier1Offset + tieThickness, PointF());
+    m_shapePath = PainterPath();
+    m_shapePath.moveTo(PointF());
+    m_shapePath.cubicTo(bezier1 + bezier1Offset - tieThickness, bezier2 + bezier2Offset - tieThickness, tieEndNormalized);
+    m_shapePath.cubicTo(bezier2 + bezier2Offset + tieThickness, bezier1 + bezier1Offset + tieThickness, PointF());
 
     // translate back
     t.reset();
     t.translate(tieStart.x(), tieStart.y());
     t.rotateRadians(tieAngle);
-    path = t.map(path);
-    shapePath = t.map(shapePath);
+    m_path = t.map(m_path);
+    m_shapePath = t.map(m_shapePath);
     ups(Grip::BEZIER1).p = t.map(bezier1);
     ups(Grip::BEZIER2).p = t.map(bezier2);
     ups(Grip::END).p = t.map(tieEndNormalized) - ups(Grip::END).off;
     ups(Grip::DRAG).p = t.map(tieDrag);
     ups(Grip::SHOULDER).p = t.map(tieShoulder);
 
-    _shape.clear();
+    m_shape.clear();
     PointF start;
     start = t.map(start);
 
@@ -357,7 +353,7 @@ void TieSegment::computeBezier(PointF shoulderOffset)
             tieWidthInSp = (minH - re.height()) * .5;
             re.adjust(0.0, -tieWidthInSp, 0.0, tieWidthInSp);
         }
-        _shape.add(re);
+        m_shape.add(re);
         start = point;
     }
 }
@@ -426,7 +422,7 @@ void TieSegment::adjustY(const PointF& p1, const PointF& p2)
 #else
         // more correct, less efficient
         computeBezier();
-        bbox = path.boundingRect();
+        bbox = m_path.boundingRect();
 #endif
     } else {
         // don't adjust ties that aren't horizontal, just add offset
@@ -609,7 +605,7 @@ void TieSegment::adjustY(const PointF& p1, const PointF& p2)
 void TieSegment::finalizeSegment()
 {
     computeBezier();
-    setbbox(path.boundingRect());
+    setbbox(m_path.boundingRect());
 }
 
 //---------------------------------------------------------
@@ -814,11 +810,11 @@ void TieSegment::setAutoAdjust(const PointF& offset)
 {
     PointF diff = offset - autoAdjustOffset;
     if (!diff.isNull()) {
-        path.translate(diff);
-        shapePath.translate(diff);
-        _shape.translate(diff);
+        m_path.translate(diff);
+        m_shapePath.translate(diff);
+        m_shape.translate(diff);
         for (int i = 0; i < int(Grip::GRIPS); ++i) {
-            _ups[i].p += diff;
+            m_ups[i].p += diff;
         }
         autoAdjustOffset = offset;
     }
@@ -831,7 +827,7 @@ void TieSegment::setAutoAdjust(const PointF& offset)
 bool TieSegment::isEdited() const
 {
     for (int i = 0; i < int(Grip::GRIPS); ++i) {
-        if (!_ups[i].off.isNull()) {
+        if (!m_ups[i].off.isNull()) {
             return true;
         }
     }
@@ -883,25 +879,25 @@ void Tie::calculateDirection()
     Measure* m1 = c1->measure();
     Measure* m2 = c2->measure();
 
-    if (_slurDirection == DirectionV::AUTO) {
+    if (m_slurDirection == DirectionV::AUTO) {
         std::vector<Note*> notes = c1->notes();
         size_t n = notes.size();
         StaffType* st = staff()->staffType(startNote() ? startNote()->tick() : Fraction(0, 1));
         bool simpleException = st && st->isSimpleTabStaff();
         // if there are multiple voices, the tie direction goes on stem side
         if (m1->hasVoices(c1->staffIdx(), c1->tick(), c1->actualTicks())) {
-            _up = simpleException ? isUpVoice(c1->voice()) : c1->up();
+            m_up = simpleException ? isUpVoice(c1->voice()) : c1->up();
         } else if (m2->hasVoices(c2->staffIdx(), c2->tick(), c2->actualTicks())) {
-            _up = simpleException ? isUpVoice(c2->voice()) : c2->up();
+            m_up = simpleException ? isUpVoice(c2->voice()) : c2->up();
         } else if (n == 1) {
             //
             // single note
             //
             if (c1->up() != c2->up()) {
                 // if stem direction is mixed, always up
-                _up = true;
+                m_up = true;
             } else {
-                _up = !c1->up();
+                m_up = !c1->up();
             }
         } else {
             //
@@ -964,27 +960,27 @@ void Tie::calculateDirection()
                 if (tiesAbove == 0 && tiesBelow == 0 && unisonTies == 0) {
                     // this is the only tie in the chord.
                     if (notesAbove == notesBelow) {
-                        _up = !c1->up();
+                        m_up = !c1->up();
                     } else {
-                        _up = (notesAbove < notesBelow);
+                        m_up = (notesAbove < notesBelow);
                     }
                 } else if (tiesAbove == tiesBelow) {
                     // this note is dead center, so its tie should go counter to the stem direction
-                    _up = !c1->up();
+                    m_up = !c1->up();
                 } else {
-                    _up = (tiesAbove < tiesBelow);
+                    m_up = (tiesAbove < tiesBelow);
                 }
             } else if (pivotPoint == startNote()) {
                 // the current note is the lower of the only second or unison in the chord; tie goes down.
-                _up = false;
+                m_up = false;
             } else {
                 // if lower than the pivot, tie goes down, otherwise up
                 int noteDiff = compareNotesPos(startNote(), pivotPoint);
-                _up = (noteDiff >= 0);
+                m_up = (noteDiff >= 0);
             }
         }
     } else {
-        _up = _slurDirection == DirectionV::UP ? true : false;
+        m_up = m_slurDirection == DirectionV::UP ? true : false;
     }
 }
 

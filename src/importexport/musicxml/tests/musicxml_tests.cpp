@@ -433,6 +433,9 @@ TEST_F(Musicxml_Tests, chordDiagrams1) {
 TEST_F(Musicxml_Tests, chordNoVoice) {
     mxmlIoTestRef("testChordNoVoice");
 }
+TEST_F(Musicxml_Tests, chordSymbols) {
+    mxmlMscxExportTestRef("testChordSymbols");
+}
 TEST_F(Musicxml_Tests, clefs1) {
     mxmlIoTest("testClefs1");
 }
@@ -589,9 +592,6 @@ TEST_F(Musicxml_Tests, helloReadCompr) {
 TEST_F(Musicxml_Tests, helloReadWriteCompr) {
     mxmlReadWriteTestCompr("testHello");
 }
-TEST_F(Musicxml_Tests, hiddenStaves) {
-    mxmlIoTest("testHiddenStaves");
-}
 TEST_F(Musicxml_Tests, implicitMeasure1) {
     mxmlIoTest("testImplicitMeasure1");
 }
@@ -612,6 +612,9 @@ TEST_F(Musicxml_Tests, instrumentChangeMIDIportExport) {
 }
 TEST_F(Musicxml_Tests, instrumentSound) {
     mxmlIoTestRef("testInstrumentSound");
+}
+TEST_F(Musicxml_Tests, invalidLayout) {
+    mxmlMscxExportTestRef("testInvalidLayout");
 }
 TEST_F(Musicxml_Tests, invalidTimesig) {
     mxmlIoTestRef("testInvalidTimesig");
@@ -966,4 +969,11 @@ TEST_F(Musicxml_Tests, words1) {
 }
 TEST_F(Musicxml_Tests, words2) {
     mxmlIoTest("testWords2");
+}
+TEST_F(Musicxml_Tests, hiddenStaves)
+{
+    String fileName = String::fromUtf8("testHiddenStaves.xml");
+    MasterScore* score = readScore(XML_IO_DATA_DIR + fileName);
+
+    EXPECT_EQ(score->style().value(Sid::hideEmptyStaves).toBool(), true);
 }

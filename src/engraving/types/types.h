@@ -54,6 +54,8 @@ using system_idx_t = size_t;
 using part_idx_t = size_t;
 using page_idx_t = size_t;
 
+using string_idx_t = size_t;
+
 using semitone_t = int8_t;
 
 //-------------------------------------------------------------------
@@ -113,6 +115,7 @@ enum class ElementType {
     STAFF_TEXT,
     SYSTEM_TEXT,
     PLAYTECH_ANNOTATION,
+    CAPO,
     TRIPLET_FEEL,
     REHEARSAL_MARK,
     INSTRUMENT_CHANGE,
@@ -301,13 +304,18 @@ enum class Orientation : signed char {
 
 // P_TYPE::BEAM_MODE
 //! Note: for historical reasons, these have strange names
+//!
 enum class BeamMode : signed char {
     INVALID = -1,
     AUTO,
     NONE,
     BEGIN,
+    // TODO:
+    // strange names aside, mscx files refer to BEGIN16 and BEGIN32 as begin32/begin64, which would describe the 3rd and 4th beams,
+    // which is wildly incorrect.These enum names are CORRECT, but I haven't touched the mscx files yet.
+    // changing this for the save files would necessitate some serious file version / import work. -A
+    BEGIN16,
     BEGIN32,
-    BEGIN64,
     MID,
     END
 };
@@ -661,8 +669,10 @@ struct OrnamentInterval
     }
 };
 
+static const OrnamentInterval DEFAULT_ORNAMENT_INTERVAL = OrnamentInterval(IntervalStep::SECOND, IntervalType::AUTO);
+
 enum class OrnamentShowAccidental {
-    AUTO,
+    DEFAULT,
     ANY_ALTERATION,
     ALWAYS,
 };
@@ -997,6 +1007,19 @@ static inline bool operator!=(const Key a, const Key b) { return static_cast<int
 static inline Key operator+=(Key& a, const Key& b) { return a = Key(static_cast<int>(a) + static_cast<int>(b)); }
 static inline Key operator-=(Key& a, const Key& b) { return a = Key(static_cast<int>(a) - static_cast<int>(b)); }
 
+struct SwingParameters {
+    int swingUnit = 0;
+    int swingRatio = 0;
+
+    bool isOn() const { return swingUnit != 0; }
+};
+
+struct CapoParams {
+    bool active = false;
+    int fretPosition = 0;
+    std::unordered_set<string_idx_t> ignoredStrings;
+};
+
 struct PartAudioSettingsCompat {
     InstrumentTrackId instrumentId;
     bool mute = false;
@@ -1007,6 +1030,33 @@ struct PartAudioSettingsCompat {
 struct SettingsCompat {
     std::map<ID /*partid*/, PartAudioSettingsCompat> audioSettings;
 };
+
+//---------------------------------------------------------
+//   UpdateMode
+//    There is an implied order from least invasive update
+//    to most invasive update. LayoutAll is fallback and
+//    recreates all.
+//---------------------------------------------------------
+
+enum class UpdateMode {
+    DoNothing,
+    Update,             // do screen refresh of RectF "refresh"
+    UpdateAll,          // do complete screen refresh
+    Layout,             // do partial layout for tick range
+};
+
+//---------------------------------------------------------
+//   LayoutFlag bits
+//---------------------------------------------------------
+
+enum class LayoutFlag : char {
+    NO_FLAGS       = 0,
+    FIX_PITCH_VELO = 1,
+    PLAY_EVENTS    = 2,
+    REBUILD_MIDI_MAPPING = 4,
+};
+
+typedef Flags<LayoutFlag> LayoutFlags;
 } // mu::engraving
 
 template<>

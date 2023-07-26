@@ -33,49 +33,52 @@ StyledPopupView {
     HarpPedalPopupModel {
         id: harpModel
 
-        onIsDiagramChanged: updatePosition(harpModel.pos, harpModel.size)
+        onItemRectChanged: function(rect) {
+            updatePosition(rect)
+        }
     }
 
     property QtObject model: harpModel
 
     property variant pedalState: harpModel.pedalState
 
+    property NavigationSection notationViewNavigationSection: null
     property int navigationOrderStart: 0
     property int navigationOrderEnd: isDiagramNavPanel.order
 
     contentWidth: menuItems.width
-
     contentHeight: menuItems.height
 
     margins: 0
 
-    openPolicy: PopupView.NoActivateFocus
-
     showArrow: false
 
-    function updatePosition(pos, size) {
+    function updatePosition(elementRect) {
+        root.x = elementRect.x + (elementRect.width - contentWidth) / 2
 
-        // Default: open above position of diagram
-        setOpensUpward(true)
-        root.x = (pos.x + size.x / 2) - contentWidth / 2
-        root.y = pos.y - size.y - contentHeight
+        const marginFromElement = 12
 
-        // For diagrams below stave, position above stave to not obscure it
-        if (harpModel.belowStave) {
-            root.y = harpModel.staffPos.y - size.y - contentHeight
-        }
+        // Above diagram
+        let yUp = Math.min(elementRect.y - contentHeight - marginFromElement,
+                           harpModel.staffPos.y - contentHeight - marginFromElement)
+        let yDown = Math.max(elementRect.y + elementRect.height + marginFromElement,
+                             harpModel.staffPos.y + harpModel.staffPos.height + marginFromElement)
 
         // not enough room on window to open above so open below stave
-        var globPos = mapToItem(ui.rootItem, Qt.point(root.x, root.y))
+        let opensUp = true
+        let globPos = root.parent.mapToItem(ui.rootItem, Qt.point(root.x, yUp))
         if (globPos.y < 0) {
-            setOpensUpward(false)
-            root.y = harpModel.staffPos.y + harpModel.staffPos.height + 10
+            opensUp = false;
+            globPos = root.parent.mapToItem(ui.rootItem, Qt.point(root.x, yDown))
         }
 
         // not enough room below stave to open so open above
-        if (root.y > ui.rootItem.height) {
-            root.y = pos.y - size.y
+        if (globPos + contentHeight > ui.rootItem.height) {
+            opensUp = true;
         }
+
+        setOpensUpward(opensUp)
+        root.y = opensUp ? yUp : yDown
     }
 
     function checkPedalState(string, state) {
@@ -90,13 +93,13 @@ StyledPopupView {
     function getNoteName(string, state) {
 
         var noteNames = [
-                [qsTrc("notation", "D Flat"), qsTrc("notation", "D Natural"), qsTrc("notation", "D Sharp")],
-                [qsTrc("notation", "C Flat"), qsTrc("notation", "C Natural"), qsTrc("notation", "C Sharp")],
-                [qsTrc("notation", "B Flat"), qsTrc("notation", "B Natural"), qsTrc("notation", "B Sharp")],
-                [qsTrc("notation", "E Flat"), qsTrc("notation", "E Natural"), qsTrc("notation", "E Sharp")],
-                [qsTrc("notation", "F Flat"), qsTrc("notation", "F Natural"), qsTrc("notation", "F Sharp")],
-                [qsTrc("notation", "G Flat"), qsTrc("notation", "G Natural"), qsTrc("notation", "G Sharp")],
-                [qsTrc("notation", "A Flat"), qsTrc("notation", "A Natural"), qsTrc("notation", "A Sharp")]
+                [qsTrc("notation", "D flat"), qsTrc("notation", "D natural"), qsTrc("notation", "D sharp")],
+                [qsTrc("notation", "C flat"), qsTrc("notation", "C natural"), qsTrc("notation", "C sharp")],
+                [qsTrc("notation", "B flat"), qsTrc("notation", "B natural"), qsTrc("notation", "B sharp")],
+                [qsTrc("notation", "E flat"), qsTrc("notation", "E natural"), qsTrc("notation", "E sharp")],
+                [qsTrc("notation", "F flat"), qsTrc("notation", "F natural"), qsTrc("notation", "F sharp")],
+                [qsTrc("notation", "G flat"), qsTrc("notation", "G natural"), qsTrc("notation", "G sharp")],
+                [qsTrc("notation", "A flat"), qsTrc("notation", "A natural"), qsTrc("notation", "A sharp")]
         ]
 
         return noteNames[string][state]
@@ -117,9 +120,9 @@ StyledPopupView {
             id: pedalSettingsNavPanel
             name: "PedalSettings"
             direction: NavigationPanel.Vertical
-            section: root.navigationSection
+            section: root.notationViewNavigationSection
             order: root.navigationOrderStart
-            accessible.name: qsTrc("notation", "Pedal Settings buttons")
+            accessible.name: qsTrc("notation", "Pedal settings buttons")
         }
 
         // Accidental symbols
@@ -261,7 +264,7 @@ StyledPopupView {
         NavigationPanel {
             id: isDiagramNavPanel
             name: "HarpPedalIsDiagramButtons"
-            section: root.navigationSection
+            section: root.notationViewNavigationSection
             direction: NavigationPanel.Horizontal
             order: pedalSettingsNavPanel.order + 1
             accessible.name: qsTrc("notation", "Diagram type buttons")

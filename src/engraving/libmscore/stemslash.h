@@ -47,12 +47,16 @@ public:
 
     Chord* chord() const { return (Chord*)explicitParent(); }
 
+    const mu::LineF& line() const { return m_line; }
+    void setLine(const mu::LineF& l) { m_line = l; }
+
+    double stemWidth() const { return m_width; }
+    void setStemWidth(double w) { m_width = w; }
+
 private:
-    friend class layout::v0::TLayout;
+
     friend class Factory;
     StemSlash(Chord* parent = 0);
-
-    KerningType doComputeKerningType(const EngravingItem* nextItem) const override;
 
     mu::LineF m_line;
     double m_width = 0;

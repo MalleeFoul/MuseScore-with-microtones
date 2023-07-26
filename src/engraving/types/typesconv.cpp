@@ -183,6 +183,7 @@ static const std::vector<Item<ElementType> > ELEMENT_TYPES = {
     { ElementType::STAFF_TEXT,           "StaffText",            TranslatableString("engraving", "Staff text") },
     { ElementType::SYSTEM_TEXT,          "SystemText",           TranslatableString("engraving", "System text") },
     { ElementType::PLAYTECH_ANNOTATION,  "PlayTechAnnotation",   TranslatableString("engraving", "Playing technique annotation") },
+    { ElementType::CAPO,                 "Capo",                 TranslatableString("engraving", "Capo") },
     { ElementType::TRIPLET_FEEL,         "TripletFeel",          TranslatableString("engraving", "Triplet feel") },
     { ElementType::REHEARSAL_MARK,       "RehearsalMark",        TranslatableString("engraving", "Rehearsal mark") },
     { ElementType::INSTRUMENT_CHANGE,    "InstrumentChange",     TranslatableString("engraving", "Instrument change") },
@@ -1035,8 +1036,8 @@ static const std::vector<Item<TextStyleType> > TEXTSTYLE_TYPES = {
     { TextStyleType::GLISSANDO,         "glissando",            TranslatableString("engraving", "Glissando") },
     { TextStyleType::PEDAL,             "pedal",                TranslatableString("engraving", "Pedal") },
     { TextStyleType::BEND,              "bend",                 TranslatableString("engraving", "Bend") },
-    { TextStyleType::LET_RING,          "let_ring",             TranslatableString("engraving", "Let Ring") },
-    { TextStyleType::PALM_MUTE,         "palm_mute",            TranslatableString("engraving", "Palm Mute") },
+    { TextStyleType::LET_RING,          "let_ring",             TranslatableString("engraving", "Let ring") },
+    { TextStyleType::PALM_MUTE,         "palm_mute",            TranslatableString("engraving", "Palm mute") },
 
     { TextStyleType::USER1,             "user_1",               TranslatableString("engraving", "User-1") },
     { TextStyleType::USER2,             "user_2",               TranslatableString("engraving", "User-2") },
@@ -1607,8 +1608,8 @@ static const std::vector<Item<BeamMode> > BEAMMODE_TYPES = {
     { BeamMode::MID, "mid" },
     { BeamMode::END, "end" },
     { BeamMode::NONE, "no" },
+    { BeamMode::BEGIN16, "begin16" },
     { BeamMode::BEGIN32, "begin32" },
-    { BeamMode::BEGIN64, "begin64" },
     { BeamMode::INVALID, "invalid" }
 };
 

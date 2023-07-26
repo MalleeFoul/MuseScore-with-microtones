@@ -129,6 +129,7 @@ set(LINK_LIB
     fonts
     network
 
+    braille
     diagnostics
     engraving
     actions
@@ -175,7 +176,6 @@ if (NOT CC_IS_EMSCRIPTEN)
         set(LINK_LIB ${LINK_LIB}
             iex_musicxml
             iex_bb
-            iex_braille
             iex_bww
             iex_capella
             iex_guitarpro
@@ -184,6 +184,7 @@ if (NOT CC_IS_EMSCRIPTEN)
             iex_ove
             iex_audioexport
             iex_imagesexport
+            iex_mei
         )
 
         if (MUE_BUILD_VIDEOEXPORT_MODULE)
@@ -449,15 +450,17 @@ elseif(OS_IS_MAC)
             DESTINATION ${Mscore_SHARE_NAME}${Mscore_INSTALL_NAME}fonts
     )
 
-    install(DIRECTORY
-            ${QT_INSTALL_QML}
-            DESTINATION ${Mscore_SHARE_NAME}${Mscore_INSTALL_NAME}
-            REGEX ".*QtWebkit.*" EXCLUDE
-            REGEX ".*QtTest.*" EXCLUDE
-            REGEX ".*QtSensors.*" EXCLUDE
-            REGEX ".*QtMultimedia.*" EXCLUDE
-            REGEX ".*QtAudioEngine.*" EXCLUDE
-            REGEX ".*_debug\\.dylib" EXCLUDE)
+    if(MUE_COMPILE_INSTALL_QTQML_FILES)
+        install(DIRECTORY
+                ${QT_INSTALL_QML}
+                DESTINATION ${Mscore_SHARE_NAME}${Mscore_INSTALL_NAME}
+                REGEX ".*QtWebkit.*" EXCLUDE
+                REGEX ".*QtTest.*" EXCLUDE
+                REGEX ".*QtSensors.*" EXCLUDE
+                REGEX ".*QtMultimedia.*" EXCLUDE
+                REGEX ".*QtAudioEngine.*" EXCLUDE
+                REGEX ".*_debug\\.dylib" EXCLUDE)
+    endif()
 
 ###########################################
 # Wasm

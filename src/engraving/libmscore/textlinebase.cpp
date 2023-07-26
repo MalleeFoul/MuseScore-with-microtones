@@ -26,12 +26,8 @@
 
 #include "draw/types/pen.h"
 
-#include "style/style.h"
-#include "layout/v0/tlayout.h"
-
 #include "factory.h"
 #include "score.h"
-#include "staff.h"
 #include "system.h"
 #include "text.h"
 
@@ -64,8 +60,7 @@ TextLineBaseSegment::TextLineBaseSegment(const TextLineBaseSegment& seg)
     m_text->setParent(this);
     m_endText->setParent(this);
     // set the right _text
-    layout::v0::LayoutContext ctx(score());
-    layout::v0::TLayout::layout(this, ctx);
+    layout()->layoutTextLineBaseSegment(this);
 }
 
 TextLineBaseSegment::~TextLineBaseSegment()
@@ -117,7 +112,7 @@ void TextLineBaseSegment::draw(mu::draw::Painter* painter) const
         painter->translate(-m_endText->pos());
     }
 
-    if ((m_npoints == 0) || (score() && (score()->printing() || !score()->showInvisible()) && !tl->lineVisible())) {
+    if ((m_npoints == 0) || (score() && (score()->printing() || !score()->isShowInvisible()) && !tl->lineVisible())) {
         return;
     }
 
@@ -152,9 +147,13 @@ void TextLineBaseSegment::draw(mu::draw::Painter* painter) const
             pen.setDashPattern({ dash, gap });
         }
 
+        pen.setJoinStyle(PenJoinStyle::BevelJoin);
         painter->setPen(pen);
-        painter->drawLines(&m_points[0], 1);
-        painter->drawLines(&m_points[2], 1);
+        if (!m_joinedHairpin.empty() && !isNonSolid) {
+            painter->drawPolyline(m_joinedHairpin);
+        } else {
+            painter->drawLines(&m_points[0], 2);
+        }
         return;
     }
 

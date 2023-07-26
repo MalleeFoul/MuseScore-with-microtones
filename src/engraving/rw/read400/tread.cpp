@@ -209,7 +209,7 @@ PropertyValue TRead::readPropertyValue(Pid id, XmlReader& e, ReadContext& ctx)
     case P_TYPE::ORNAMENT_STYLE:
         return PropertyValue::fromValue(TConv::fromXml(e.readAsciiText(), OrnamentStyle::DEFAULT));
     case P_TYPE::ORNAMENT_INTERVAL:
-        return PropertyValue(TConv::fromXml(e.readText(), OrnamentInterval()));
+        return PropertyValue(TConv::fromXml(e.readText(), DEFAULT_ORNAMENT_INTERVAL));
     case P_TYPE::POINT:
         return PropertyValue::fromValue(e.readPoint());
     case P_TYPE::SCALE:
@@ -453,13 +453,7 @@ bool TRead::readItemProperties(EngravingItem* item, XmlReader& e, ReadContext& c
     } else if (tag == "voice") {
         item->setVoice(e.readInt());
     } else if (tag == "tag") {
-        String val(e.readText());
-        for (int i = 1; i < MAX_TAGS; i++) {
-            if (ctx.score()->layerTags()[i] == val) {
-                item->setTag(1 << i);
-                break;
-            }
-        }
+        e.skipCurrentElement();
     } else if (TRead::readProperty(item, tag, e, ctx, Pid::PLACEMENT)) {
     } else if (tag == "z") {
         item->setZ(e.readInt());
@@ -1160,7 +1154,7 @@ void TRead::read(KeyList* item, XmlReader& e, ReadContext& ctx)
                 k = Key(e.intAttribute("idx"));
             }
             KeySigEvent ke;
-            ke.setKey(k);
+            ke.setConcertKey(k);
             (*item)[ctx.fileDivision(tick)] = ke;
             e.readNext();
         } else {
@@ -1173,6 +1167,7 @@ void TRead::read(KeySig* s, XmlReader& e, ReadContext& ctx)
 {
     KeySigEvent sig;
     int subtype = 0;
+    Part* p = s->part();
 
     while (e.readNextStartElement()) {
         const AsciiStringView tag(e.name());
@@ -1203,7 +1198,7 @@ void TRead::read(KeySig* s, XmlReader& e, ReadContext& ctx)
                     e.readNext();
                 } else if (t == "pos") { // for older files
                     double prevx = 0;
-                    double accidentalGap = s->score()->styleS(Sid::keysigAccidentalDistance).val();
+                    double accidentalGap = ctx.score()->style().styleS(Sid::keysigAccidentalDistance).val();
                     double _spatium = s->spatium();
                     // count default x position
                     for (CustDef& cd : sig.customKeyDefs()) {
@@ -1228,8 +1223,17 @@ void TRead::read(KeySig* s, XmlReader& e, ReadContext& ctx)
             s->setShowCourtesy(e.readInt());
         } else if (tag == "showNaturals") {           // obsolete
             e.readInt();
-        } else if (tag == "accidental") {
-            sig.setKey(Key(e.readInt()));
+        } else if (tag == "accidental") {             // we need to guess proper concert key
+            Key key = Key(e.readInt());
+            Key cKey = key;
+            if (p && !s->concertPitch()) {
+                Interval v = p->instrument(s->tick())->transpose();
+                if (!v.isZero()) {
+                    cKey = transposeKey(key, v);
+                }
+            }
+            sig.setConcertKey(cKey);
+            sig.setKey(key);
         } else if (tag == "natural") {                // obsolete
             e.readInt();
         } else if (tag == "custom") {
@@ -1263,7 +1267,7 @@ void TRead::read(KeySig* s, XmlReader& e, ReadContext& ctx)
         } else if (tag == "subtype") {
             subtype = e.readInt();
         } else if (tag == "forInstrumentChange") {
-            s->setForInstrumentChange(e.readBool());
+            sig.setForInstrumentChange(e.readBool());
         } else if (!readItemProperties(s, e, ctx)) {
             e.unknown();
         }
@@ -1274,6 +1278,11 @@ void TRead::read(KeySig* s, XmlReader& e, ReadContext& ctx)
     }
     if (sig.custom() && sig.customKeyDefs().empty()) {
         sig.setMode(KeyMode::NONE);
+    }
+    // if there are more than 6 accidentals in transposing key, it cannot be PreferSharpFlat::AUTO
+    if (p && !s->concertPitch() && (sig.key() > 6 || sig.key() < -6)
+        && p->preferSharpFlat() == PreferSharpFlat::AUTO && !p->instrument(s->tick())->transpose().isZero()) {
+        p->setPreferSharpFlat(PreferSharpFlat::NONE);
     }
 
     s->setKeySigEvent(sig);
@@ -1391,7 +1400,7 @@ bool TRead::readProperties(Fermata* f, XmlReader& xml, ReadContext& ctx)
     if (tag == "subtype") {
         AsciiStringView s = xml.readAsciiText();
         SymId id = SymNames::symIdByName(s);
-        f->setSymId(id);
+        f->setSymIdAndTimeStretch(id);
     } else if (tag == "play") {
         f->setPlay(xml.readBool());
     } else if (tag == "timeStretch") {
@@ -1496,9 +1505,9 @@ void TRead::read(Tuplet* t, XmlReader& e, ReadContext& ctx)
         } else if (tag == "actualNotes") {
             ratio.setNumerator(e.readInt());
         } else if (tag == "p1") {
-            t->setUserPoint1(e.readPoint() * t->score()->spatium());
+            t->setUserPoint1(e.readPoint() * t->style().spatium());
         } else if (tag == "p2") {
-            t->setUserPoint2(e.readPoint() * t->score()->spatium());
+            t->setUserPoint2(e.readPoint() * t->style().spatium());
         } else if (tag == "baseNote") {
             baseLen = TDuration(TConv::fromXml(e.readAsciiText(), DurationType::V_INVALID));
         } else if (tag == "baseDots") {
@@ -1724,12 +1733,12 @@ void TRead::read(SystemDivider* d, XmlReader& e, ReadContext& ctx)
     if (e.attribute("type") == "left") {
         d->setDividerType(SystemDivider::Type::LEFT);
 
-        SymId sym = SymNames::symIdByName(d->score()->styleSt(Sid::dividerLeftSym));
+        SymId sym = SymNames::symIdByName(ctx.style().styleSt(Sid::dividerLeftSym));
         d->setSym(sym, d->score()->engravingFont());
     } else {
         d->setDividerType(SystemDivider::Type::RIGHT);
 
-        SymId sym = SymNames::symIdByName(d->score()->styleSt(Sid::dividerRightSym));
+        SymId sym = SymNames::symIdByName(ctx.style().styleSt(Sid::dividerRightSym));
         d->setSym(sym, d->score()->engravingFont());
     }
     TRead::read(static_cast<Symbol*>(d), e, ctx);
@@ -2042,14 +2051,14 @@ bool TRead::readProperties(Box* b, XmlReader& e, ReadContext& ctx)
         double gap = e.readDouble();
         b->setTopGap(Millimetre(gap));
         if (b->score()->mscVersion() >= 206) {
-            b->setTopGap(Millimetre(gap * b->score()->spatium()));
+            b->setTopGap(Millimetre(gap * b->style().spatium()));
         }
         b->setPropertyFlags(Pid::TOP_GAP, PropertyFlags::UNSTYLED);
     } else if (tag == "bottomGap") {
         double gap = e.readDouble();
         b->setBottomGap(Millimetre(gap));
         if (b->score()->mscVersion() >= 206) {
-            b->setBottomGap(Millimetre(gap * b->score()->spatium()));
+            b->setBottomGap(Millimetre(gap * b->style().spatium()));
         }
         b->setPropertyFlags(Pid::BOTTOM_GAP, PropertyFlags::UNSTYLED);
     } else if (tag == "leftMargin") {
@@ -2450,7 +2459,15 @@ bool TRead::readProperties(ChordRest* ch, XmlReader& e, ReadContext& ctx)
             }
         }
     } else if (tag == "BeamMode") {
-        ch->setBeamMode(TConv::fromXml(e.readAsciiText(), BeamMode::AUTO));
+        // 400 and previous used begin32/begin64 for beam mode
+        // 410 uses begin16/begin32
+        auto txt = e.readAsciiText();
+        if (txt == "begin64") {
+            txt = "begin32";
+        } else if (txt == "begin32") {
+            txt = "begin16";
+        }
+        ch->setBeamMode(TConv::fromXml(txt, BeamMode::AUTO));
     } else if (tag == "Articulation") {
         Articulation* atr = Factory::createArticulation(ch);
         atr->setTrack(ch->track());
@@ -2524,6 +2541,9 @@ void TRead::read(ChordLine* l, XmlReader& e, ReadContext& ctx)
                     int type = e.intAttribute("type");
                     double x  = e.doubleAttribute("x");
                     double y  = e.doubleAttribute("y");
+                    double spatium = ctx.spatium();
+                    x *= spatium;
+                    y *= spatium;
                     switch (PainterPath::ElementType(type)) {
                     case PainterPath::ElementType::MoveToElement:
                         path.moveTo(x, y);
@@ -2940,7 +2960,7 @@ bool TRead::readProperties(LineSegment* l, XmlReader& e, ReadContext& ctx)
     if (tag == "subtype") {
         l->setSpannerSegmentType(SpannerSegmentType(e.readInt()));
     } else if (tag == "off2") {
-        l->setUserOff2(e.readPoint() * l->score()->spatium());
+        l->setUserOff2(e.readPoint() * l->style().spatium());
     }
 /*      else if (tag == "pos") {
             setOffset(PointF());
@@ -3306,7 +3326,14 @@ bool TRead::readProperties(Part* p, XmlReader& e, ReadContext& ctx)
     } else if (tag == "soloist") {
         p->setSoloist(e.readInt());
     } else if (tag == "preferSharpFlat") {
-        p->setPreferSharpFlat(e.readText() == "sharps" ? PreferSharpFlat::SHARPS : PreferSharpFlat::FLATS);
+        String val = e.readText();
+        if (val == "sharps") {
+            p->setPreferSharpFlat(PreferSharpFlat::SHARPS);
+        } else if (val == "flats") {
+            p->setPreferSharpFlat(PreferSharpFlat::FLATS);
+        } else {
+            p->setPreferSharpFlat(PreferSharpFlat::AUTO);
+        }
     } else {
         return false;
     }
@@ -3489,7 +3516,7 @@ bool TRead::readProperties(SlurTie* s, XmlReader& e, ReadContext& ctx)
 
 void TRead::read(SlurTieSegment* s, XmlReader& e, ReadContext& ctx)
 {
-    double _spatium = s->score()->spatium();
+    double _spatium = s->style().spatium();
     while (e.readNextStartElement()) {
         const AsciiStringView tag(e.name());
         if (s->score()->mscVersion() < 400 && (tag == "o1" || tag == "o2" || tag == "o3" || tag == "o4")) {
@@ -3694,7 +3721,7 @@ bool TRead::readProperties(Staff* s, XmlReader& e, ReadContext& ctx)
     } else if (tag == "barLineSpanTo") {
         s->setBarLineTo(e.readInt());
     } else if (tag == "distOffset") {
-        s->setUserDist(Millimetre(e.readDouble() * s->score()->spatium()));
+        s->setUserDist(Millimetre(e.readDouble() * s->style().spatium()));
     } else if (tag == "mag") {
         /*_userMag =*/
         e.readDouble(0.1, 10.0);
@@ -4008,7 +4035,7 @@ void TRead::read(Tremolo* t, XmlReader& e, ReadContext& ctx)
         // to avoid calling customStyleApplicable() in setProperty(),
         // which cannot be called now because durationType() isn't defined yet.
         else if (tag == "strokeStyle") {
-            t->setStyle(TremoloStyle(e.readInt()));
+            t->setTremoloStyle(TremoloStyle(e.readInt()));
             t->setPropertyFlags(Pid::TREMOLO_STYLE, PropertyFlags::UNSTYLED);
         } else if (tag == "Fragment") {
             BeamFragment f = BeamFragment();

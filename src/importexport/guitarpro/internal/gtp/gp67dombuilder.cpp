@@ -616,6 +616,7 @@ std::pair<int, std::shared_ptr<GPBeat> > GP67DomBuilder::createGPBeat(XmlDomNode
                 note = _notes.at(idx);
                 beat->addGPNote(note);
             }
+            beat->sortGPNotes();
         } else if (nodeName == u"GraceNotes") {
             beat->setGraceNotes(graceNotes(innerNode.toElement().text()));
         } else if (nodeName == u"Arpeggio") {
@@ -1170,7 +1171,7 @@ void GP67DomBuilder::readBeatProperties(const XmlDomNode& propertiesNode, GPBeat
         } else if (propertyName == u"Brush") {
             beat->setBrush(brushType(propertyNode.firstChild().toElement().text()));
         } else if (propertyName == u"VibratoWTremBar") {
-            beat->setVibrato(vibratoType(propertyNode.firstChild().toElement().text()));
+            beat->setVibratoWTremBar(vibratoType(propertyNode.firstChild().toElement().text()));
         } else if (propertyName == u"Rasgueado") {
             beat->setRasgueado(rasgueadoType(propertyNode.firstChild().toElement().text()));
         } else if (propertyName == u"PickStroke") {
@@ -1216,6 +1217,9 @@ void GP67DomBuilder::readTrackProperties(XmlDomNode* propertiesNode, GPTrack* tr
                 tunning.push_back(val.toInt());
             }
             property.tunning.swap(tunning);
+            property.useFlats = !propertyNode.firstChildElement("Flat").isNull();
+        } else if (propertyName == u"TuningFlat") {
+            property.useFlats = !propertyNode.firstChildElement("Enable").isNull();
         } else if (propertyName == u"DiagramCollection" || propertyName == u"DiagramWorkingSet") {
             readDiagram(propertyNode.firstChild(), track);
         }

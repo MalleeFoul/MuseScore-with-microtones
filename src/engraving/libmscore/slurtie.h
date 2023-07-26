@@ -27,10 +27,6 @@
 
 #include "draw/types/painterpath.h"
 
-namespace mu::engraving::layout::v0 {
-class SlurTieLayout;
-}
-
 namespace mu::engraving {
 //---------------------------------------------------------
 //   SlurPos
@@ -95,18 +91,6 @@ class SlurTie;
 class SlurTieSegment : public SpannerSegment
 {
     OBJECT_ALLOCATOR(engraving, SlurTieSegment)
-protected:
-    struct UP _ups[int(Grip::GRIPS)];
-
-    mu::draw::PainterPath path;
-    mu::draw::PainterPath shapePath;
-    Shape _shape;
-
-    SlurTieSegment(const ElementType& type, System*);
-    SlurTieSegment(const SlurTieSegment&);
-
-    virtual void changeAnchor(EditData&, EngravingItem*) = 0;
-    std::vector<mu::LineF> gripAnchorLines(Grip grip) const override;
 
 public:
 
@@ -125,10 +109,12 @@ public:
     void move(const PointF& s) override;
     bool isEditable() const override { return true; }
 
-    void setSlurOffset(Grip i, const PointF& val) { _ups[int(i)].off = val; }
-    const UP& ups(Grip i) const { return _ups[int(i)]; }
-    UP& ups(Grip i) { return _ups[int(i)]; }
-    Shape shape() const override { return _shape; }
+    void setSlurOffset(Grip i, const PointF& val) { m_ups[int(i)].off = val; }
+    const UP& ups(Grip i) const { return m_ups[int(i)]; }
+    UP& ups(Grip i) { return m_ups[int(i)]; }
+    Shape shape() const override { return m_shape; }
+
+    const mu::draw::PainterPath& path() const { return m_path; }
 
     bool needStartEditingAfterSelecting() const override { return true; }
     int gripsCount() const override { return int(Grip::GRIPS); }
@@ -138,6 +124,19 @@ public:
 
     virtual void drawEditMode(mu::draw::Painter* painter, EditData& editData, double currentViewScaling) override;
     virtual void computeBezier(PointF so = PointF()) = 0;
+
+protected:
+    SlurTieSegment(const ElementType& type, System*);
+    SlurTieSegment(const SlurTieSegment&);
+
+    virtual void changeAnchor(EditData&, EngravingItem*) = 0;
+    std::vector<mu::LineF> gripAnchorLines(Grip grip) const override;
+
+    struct UP m_ups[int(Grip::GRIPS)];
+
+    mu::draw::PainterPath m_path;
+    mu::draw::PainterPath m_shapePath;
+    Shape m_shape;
 };
 
 //-------------------------------------------------------------------
@@ -150,42 +149,43 @@ class SlurTie : public Spanner
 {
     OBJECT_ALLOCATOR(engraving, SlurTie)
 
-    SlurStyleType _styleType = SlurStyleType::Undefined;
-
-protected:
-
-    friend class layout::v0::SlurTieLayout;
-
-    bool _up;                 // actual direction
-
-    DirectionV _slurDirection;
-    void fixupSegments(unsigned nsegs);
-
 public:
     SlurTie(const ElementType& type, EngravingItem* parent);
     SlurTie(const SlurTie&);
     ~SlurTie();
 
-    bool up() const { return _up; }
-    void setUp(bool val) { _up = val; }
+    bool up() const { return m_up; }
+    void setUp(bool val) { m_up = val; }
 
     virtual void reset() override;
 
-    DirectionV slurDirection() const { return _slurDirection; }
-    void setSlurDirection(DirectionV d) { _slurDirection = d; }
+    DirectionV slurDirection() const { return m_slurDirection; }
+    void setSlurDirection(DirectionV d) { m_slurDirection = d; }
     void undoSetSlurDirection(DirectionV d);
 
     virtual void layout2(const PointF, int, struct UP&) {}
     virtual bool contains(const PointF&) const { return false; }    // not selectable
 
-    SlurStyleType styleType() const { return _styleType; }
-    void setStyleType(SlurStyleType type) { _styleType = type; }
+    SlurStyleType styleType() const { return m_styleType; }
+    void setStyleType(SlurStyleType type) { m_styleType = type; }
 
     virtual SlurTieSegment* newSlurTieSegment(System* parent) = 0;
 
     PropertyValue getProperty(Pid propertyId) const override;
     bool setProperty(Pid propertyId, const PropertyValue&) override;
     PropertyValue propertyDefault(Pid id) const override;
+
+    void fixupSegments(unsigned nsegs);
+
+protected:
+
+    bool m_up = true;                 // actual direction
+
+    DirectionV m_slurDirection = DirectionV::AUTO;
+
+private:
+
+    SlurStyleType m_styleType = SlurStyleType::Undefined;
 };
 }
 

@@ -27,10 +27,6 @@
 #include "draw/types/pen.h"
 #include "draw/types/brush.h"
 
-#include "layout/v0/tlayout.h"
-#include "layout/v0/slurtielayout.h"
-#include "layout/v0/chordlayout.h"
-
 #include "beam.h"
 #include "chord.h"
 #include "measure.h"
@@ -95,29 +91,29 @@ void SlurSegment::draw(mu::draw::Painter* painter) const
         painter->setBrush(Brush(pen.color()));
         pen.setCapStyle(PenCapStyle::RoundCap);
         pen.setJoinStyle(PenJoinStyle::RoundJoin);
-        pen.setWidthF(score()->styleMM(Sid::SlurEndWidth) * mag);
+        pen.setWidthF(style().styleMM(Sid::SlurEndWidth) * mag);
         break;
     case SlurStyleType::Dotted:
         painter->setBrush(BrushStyle::NoBrush);
         pen.setCapStyle(PenCapStyle::RoundCap);           // round dots
         pen.setDashPattern(dotted);
-        pen.setWidthF(score()->styleMM(Sid::SlurDottedWidth) * mag);
+        pen.setWidthF(style().styleMM(Sid::SlurDottedWidth) * mag);
         break;
     case SlurStyleType::Dashed:
         painter->setBrush(BrushStyle::NoBrush);
         pen.setDashPattern(dashed);
-        pen.setWidthF(score()->styleMM(Sid::SlurDottedWidth) * mag);
+        pen.setWidthF(style().styleMM(Sid::SlurDottedWidth) * mag);
         break;
     case SlurStyleType::WideDashed:
         painter->setBrush(BrushStyle::NoBrush);
         pen.setDashPattern(wideDashed);
-        pen.setWidthF(score()->styleMM(Sid::SlurDottedWidth) * mag);
+        pen.setWidthF(style().styleMM(Sid::SlurDottedWidth) * mag);
         break;
     case SlurStyleType::Undefined:
         break;
     }
     painter->setPen(pen);
-    painter->drawPath(path);
+    painter->drawPath(m_path);
 }
 
 //---------------------------------------------------------
@@ -184,8 +180,7 @@ bool SlurSegment::edit(EditData& ed)
 
     if (ed.key == Key_Home && !ed.modifiers) {
         ups(ed.curGrip).off = PointF();
-        layout::v0::LayoutContext ctx(score());
-        layout::v0::TLayout::layout(sl, ctx);
+        layout()->layoutItem(sl);
         triggerLayout();
         return true;
     }
@@ -230,7 +225,6 @@ bool SlurSegment::edit(EditData& ed)
 
 void SlurSegment::changeAnchor(EditData& ed, EngravingItem* element)
 {
-    layout::v0::LayoutContext ctx(score());
     ChordRest* cr = element->isChordRest() ? toChordRest(element) : nullptr;
     ChordRest* scr = spanner()->startCR();
     ChordRest* ecr = spanner()->endCR();
@@ -294,13 +288,13 @@ void SlurSegment::changeAnchor(EditData& ed, EngravingItem* element)
                 }
             }
             score()->undo(new ChangeStartEndSpanner(sp, se, ee));
-            layout::v0::TLayout::layout(sp, ctx);
+            layout()->layoutItem(sp);
         }
     }
 
     const size_t segments  = spanner()->spannerSegments().size();
     ups(ed.curGrip).off = PointF();
-    layout::v0::TLayout::layout(spanner(), ctx);
+    layout()->layoutItem(spanner());
     if (spanner()->spannerSegments().size() != segments) {
         const std::vector<SpannerSegment*>& ss = spanner()->spannerSegments();
         const bool moveEnd = ed.curGrip == Grip::END || ed.curGrip == Grip::DRAG;
@@ -316,8 +310,7 @@ void SlurSegment::editDrag(EditData& ed)
     System* startSys = slur()->startCR()->measure()->system();
     System* endSys = slur()->endCR()->measure()->system();
     if (startSys && endSys && startSys == endSys) {
-        layout::v0::LayoutContext ctx(score());
-        layout::v0::TLayout::layout(slur(), ctx);
+        layout()->layoutItem(slur());
     }
 }
 
@@ -328,7 +321,7 @@ void SlurSegment::editDrag(EditData& ed)
 void SlurSegment::adjustEndpoints()
 {
     double lw = (staffType() ? staffType()->lineDistance().val() : 1.0) * spatium();
-    const double staffLineMargin = 0.175 + (0.5 * score()->styleS(Sid::staffLineWidth).val() * (spatium() / lw));
+    const double staffLineMargin = 0.175 + (0.5 * style().styleS(Sid::staffLineWidth).val() * (spatium() / lw));
     PointF p1 = ups(Grip::START).p;
     PointF p2 = ups(Grip::END).p;
 
@@ -683,8 +676,8 @@ void SlurSegment::computeBezier(mu::PointF p6offset)
     // If end point adjustment is locked, restore the endpoints to
     // where they were before
     if (isEndPointsEdited()) {
-        ups(Grip::START).off += _endPointOff1;
-        ups(Grip::END).off += _endPointOff2;
+        ups(Grip::START).off += m_endPointOff1;
+        ups(Grip::END).off += m_endPointOff2;
     }
     // Get start and end points (have been calculated before)
     PointF pp1 = ups(Grip::START).p + ups(Grip::START).off;
@@ -773,11 +766,11 @@ void SlurSegment::computeBezier(mu::PointF p6offset)
     p4 -= difference;
     // Keep track of how much the end points position has changed
     if (!isEndPointsEdited()) {
-        _endPointOff1 = pp1 - oldp1;
-        _endPointOff2 = pp2 - oldp2;
+        m_endPointOff1 = pp1 - oldp1;
+        m_endPointOff2 = pp2 - oldp2;
     } else {
-        _endPointOff1 = PointF(0.0, 0.0);
-        _endPointOff2 = PointF(0.0, 0.0);
+        m_endPointOff1 = PointF(0.0, 0.0);
+        m_endPointOff2 = PointF(0.0, 0.0);
     }
     // Recompute the transformation because pp1 and pp1 may have changed
     toSlurCoordinates.reset();
@@ -797,7 +790,7 @@ void SlurSegment::computeBezier(mu::PointF p6offset)
     ups(Grip::SHOULDER).p = toSystemCoordinates.map(p6);
 
     // Set slur thickness
-    double w = score()->styleMM(Sid::SlurMidWidth) - score()->styleMM(Sid::SlurEndWidth);
+    double w = style().styleMM(Sid::SlurMidWidth) - style().styleMM(Sid::SlurEndWidth);
     if (staff()) {
         w *= staff()->staffMag(slur()->tick());
     }
@@ -807,23 +800,23 @@ void SlurSegment::computeBezier(mu::PointF p6offset)
     PointF thick(0.0, w);
 
     // Set path
-    path = PainterPath();
-    path.moveTo(PointF());
-    path.cubicTo(p3 - thick, p4 - thick, p2);
+    m_path = PainterPath();
+    m_path.moveTo(PointF());
+    m_path.cubicTo(p3 - thick, p4 - thick, p2);
     if (slur()->styleType() == SlurStyleType::Solid) {
-        path.cubicTo(p4 + thick, p3 + thick, PointF());
+        m_path.cubicTo(p4 + thick, p3 + thick, PointF());
     }
     thick = PointF(0.0, 3.0 * w);
-    shapePath = PainterPath();
-    shapePath.moveTo(PointF());
-    shapePath.cubicTo(p3 - thick, p4 - thick, p2);
-    shapePath.cubicTo(p4 + thick, p3 + thick, PointF());
+    m_shapePath = PainterPath();
+    m_shapePath.moveTo(PointF());
+    m_shapePath.cubicTo(p3 - thick, p4 - thick, p2);
+    m_shapePath.cubicTo(p4 + thick, p3 + thick, PointF());
 
-    path = toSystemCoordinates.map(path);
-    shapePath = toSystemCoordinates.map(shapePath);
+    m_path = toSystemCoordinates.map(m_path);
+    m_shapePath = toSystemCoordinates.map(m_shapePath);
 
     // Create shape for the skyline
-    _shape.clear();
+    m_shape.clear();
     PointF start = pp1;
     int nbShapes  = 32;
     double minH    = abs(2 * w);
@@ -835,37 +828,9 @@ void SlurSegment::computeBezier(mu::PointF p6offset)
             double d1 = (minH - re.height()) * .5;
             re.adjust(0.0, -d1, 0.0, d1);
         }
-        _shape.add(re);
+        m_shape.add(re);
         start = point;
     }
-}
-
-//---------------------------------------------------------
-//   layoutSegment
-//---------------------------------------------------------
-
-void SlurSegment::layoutSegment(const PointF& p1, const PointF& p2)
-{
-    const StaffType* stType = staffType();
-
-    _skipDraw = false;
-    if (stType && stType->isHiddenElementOnTab(score(), Sid::slurShowTabCommon, Sid::slurShowTabSimple)) {
-        _skipDraw = true;
-        return;
-    }
-
-    setPos(PointF());
-    ups(Grip::START).p = p1;
-    ups(Grip::END).p   = p2;
-    _extraHeight = 0.0;
-
-    //Adjust Y pos to staff type yOffset before other calculations
-    if (staffType()) {
-        movePosY(staffType()->yoffset().val() * spatium());
-    }
-
-    computeBezier();
-    setbbox(path.boundingRect());
 }
 
 //---------------------------------------------------------
@@ -875,7 +840,7 @@ void SlurSegment::layoutSegment(const PointF& p1, const PointF& p2)
 bool SlurSegment::isEdited() const
 {
     for (int i = 0; i < int(Grip::GRIPS); ++i) {
-        if (!_ups[i].off.isNull()) {
+        if (!m_ups[i].off.isNull()) {
             return true;
         }
     }
@@ -884,13 +849,13 @@ bool SlurSegment::isEdited() const
 
 bool SlurSegment::isEndPointsEdited() const
 {
-    return !(_ups[int(Grip::START)].off.isNull() && _ups[int(Grip::END)].off.isNull());
+    return !(m_ups[int(Grip::START)].off.isNull() && m_ups[int(Grip::END)].off.isNull());
 }
 
 Slur::Slur(const Slur& s)
     : SlurTie(s)
 {
-    _sourceStemArrangement = s._sourceStemArrangement;
+    m_sourceStemArrangement = s.m_sourceStemArrangement;
 }
 
 //---------------------------------------------------------
@@ -906,7 +871,7 @@ void Slur::slurPosChord(SlurPos* sp)
     if (startChord()->isGraceAfter()) {      // grace notes after, coming in reverse order
         stChord = endChord();
         enChord = startChord();
-        _up = false;
+        m_up = false;
     } else {
         stChord = startChord();
         enChord = endChord();
@@ -914,7 +879,7 @@ void Slur::slurPosChord(SlurPos* sp)
     Note* _startNote = stChord->downNote();
     Note* _endNote   = enChord->downNote();
     double hw         = _startNote->bboxRightPos();
-    double __up       = _up ? -1.0 : 1.0;
+    double __up       = m_up ? -1.0 : 1.0;
     double _spatium = spatium();
 
     Measure* measure = endChord()->measure();
@@ -931,7 +896,7 @@ void Slur::slurPosChord(SlurPos* sp)
     double yo;
 
     //------p1
-    if (_up) {
+    if (m_up) {
         xo = _startNote->x() + hw * 1.12;
         yo = _startNote->pos().y() + hw * .3 * __up;
     } else {
@@ -941,7 +906,7 @@ void Slur::slurPosChord(SlurPos* sp)
     sp->p1 = stChord->pagePos() - pp + PointF(xo, yo);
 
     //------p2
-    if ((enChord->notes().size() > 1) || (enChord->stem() && !enChord->up() && !_up)) {
+    if ((enChord->notes().size() > 1) || (enChord->stem() && !enChord->up() && !m_up)) {
         xo = _endNote->x() - hw * 0.12;
         yo = _endNote->pos().y() + hw * .3 * __up;
     } else {
@@ -1013,88 +978,6 @@ bool Slur::isDirectionMixture(Chord* c1, Chord* c2)
         }
     }
     return false;
-}
-
-//---------------------------------------------------------
-//   layoutSystem
-//    layout slurSegment for system
-//---------------------------------------------------------
-
-SpannerSegment* Slur::layoutSystem(System* system)
-{
-    layout::v0::LayoutContext ctx(score());
-    return layout::v0::SlurTieLayout::layoutSystem(this, system, ctx);
-}
-
-void Slur::computeUp()
-{
-    switch (_slurDirection) {
-    case DirectionV::UP:
-        _up = true;
-        break;
-    case DirectionV::DOWN:
-        _up = false;
-        break;
-    case DirectionV::AUTO:
-    {
-        //
-        // assumption:
-        // slurs have only chords or rests as start/end elements
-        //
-        ChordRest* chordRest1 = startCR();
-        ChordRest* chordRest2 = endCR();
-        if (chordRest1 == 0 || chordRest2 == 0) {
-            _up = true;
-            break;
-        }
-        Chord* chord1 = startCR()->isChord() ? toChord(startCR()) : 0;
-        Chord* chord2 = endCR()->isChord() ? toChord(endCR()) : 0;
-        if (chord2 && startCR()->measure()->system() != endCR()->measure()->system()) {
-            // HACK: if the end chord is in a different system, it may have never been laid out yet.
-            // But we need to know its direction to decide slur direction, so need to compute it here.
-            for (Note* note : chord2->notes()) {
-                note->updateLine(); // because chord direction is based on note lines
-            }
-            layout::v0::LayoutContext ctx(score());
-            layout::v0::ChordLayout::computeUp(chord2, ctx);
-        }
-
-        if (chord1 && chord1->beam() && chord1->beam()->cross()) {
-            // TODO: stem direction is not finalized, so we cannot use it here
-            _up = true;
-            break;
-        }
-
-        _up = !(chordRest1->up());
-
-        // Check if multiple voices
-        bool multipleVoices = false;
-        Measure* m1 = chordRest1->measure();
-        while (m1 && m1->tick() <= chordRest2->tick()) {
-            if ((m1->hasVoices(chordRest1->staffIdx(), tick(), ticks() + chordRest2->ticks()))
-                && chord1) {
-                multipleVoices = true;
-                break;
-            }
-            m1 = m1->nextMeasure();
-        }
-        if (multipleVoices) {
-            // slurs go on the stem side
-            if (chordRest1->voice() > 0 || chordRest2->voice() > 0) {
-                _up = false;
-            } else {
-                _up = true;
-            }
-        } else if (chord1 && chord2 && !chord1->isGrace() && isDirectionMixture(chord1, chord2)) {
-            // slurs go above if there are mixed direction stems between c1 and c2
-            // but grace notes are exceptions
-            _up = true;
-        } else if (chord1 && chord2 && chord1->isGrace() && chord2 != chord1->parent() && isDirectionMixture(chord1, chord2)) {
-            _up = true;
-        }
-    }
-    break;
-    }
 }
 
 //---------------------------------------------------------

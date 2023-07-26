@@ -30,7 +30,6 @@
 #include "translation.h"
 
 #include "types/typesconv.h"
-#include "layout/v0/tlayout.h"
 
 #include "ambitus.h"
 #include "factory.h"
@@ -111,7 +110,7 @@ double Clef::mag() const
 {
     double mag = staff() ? staff()->staffMag(tick()) : 1.0;
     if (m_isSmall) {
-        mag *= score()->styleD(Sid::smallClefMag);
+        mag *= style().styleD(Sid::smallClefMag);
     }
     return mag;
 }
@@ -241,8 +240,7 @@ ClefType Clef::clefType() const
 void Clef::spatiumChanged(double oldValue, double newValue)
 {
     EngravingItem::spatiumChanged(oldValue, newValue);
-    layout::v0::LayoutContext ctx(score());
-    layout::v0::TLayout::layout(this, ctx);
+    layout()->layoutItem(this);
 }
 
 //---------------------------------------------------------

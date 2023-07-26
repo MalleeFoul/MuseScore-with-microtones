@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <museScore version="4.10">
   <Score>
-    <LayerTag id="0" tag="default"></LayerTag>
-    <currentLayer>0</currentLayer>
     <Division>480</Division>
     <Style>
       <lastSystemFillLimit>0</lastSystemFillLimit>
@@ -462,7 +460,10 @@
           <Chord>
             <durationType>quarter</durationType>
             <Articulation>
-              <subtype>articTenutoStaccatoAbove</subtype>
+              <subtype>articStaccatoAbove</subtype>
+              </Articulation>
+            <Articulation>
+              <subtype>articTenutoAbove</subtype>
               </Articulation>
             <Note>
               <pitch>72</pitch>
@@ -472,7 +473,10 @@
           <Chord>
             <durationType>quarter</durationType>
             <Articulation>
-              <subtype>articTenutoStaccatoBelow</subtype>
+              <subtype>articStaccatoBelow</subtype>
+              </Articulation>
+            <Articulation>
+              <subtype>articTenutoBelow</subtype>
               </Articulation>
             <Note>
               <pitch>60</pitch>
@@ -483,7 +487,11 @@
             <durationType>quarter</durationType>
             <Articulation>
               <direction>up</direction>
-              <subtype>articTenutoStaccatoAbove</subtype>
+              <subtype>articStaccatoAbove</subtype>
+              </Articulation>
+            <Articulation>
+              <direction>up</direction>
+              <subtype>articTenutoAbove</subtype>
               </Articulation>
             <Note>
               <pitch>72</pitch>
@@ -494,7 +502,11 @@
             <durationType>quarter</durationType>
             <Articulation>
               <direction>up</direction>
-              <subtype>articTenutoStaccatoAbove</subtype>
+              <subtype>articStaccatoAbove</subtype>
+              </Articulation>
+            <Articulation>
+              <direction>up</direction>
+              <subtype>articTenutoAbove</subtype>
               </Articulation>
             <Note>
               <pitch>60</pitch>

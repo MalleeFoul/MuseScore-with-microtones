@@ -61,14 +61,6 @@ ChordLine::ChordLine(const ChordLine& cl)
     m_note = cl.m_note;
 }
 
-KerningType ChordLine::doComputeKerningType(const EngravingItem* nextItem) const
-{
-    if (nextItem->isBarLine()) {
-        return KerningType::ALLOW_COLLISION;
-    }
-    return KerningType::KERNING;
-}
-
 //---------------------------------------------------------
 //   setChordLineType
 //---------------------------------------------------------
@@ -91,7 +83,7 @@ void ChordLine::draw(mu::draw::Painter* painter) const
 {
     TRACE_ITEM_DRAW;
     if (!m_wavy) {
-        painter->setPen(Pen(curColor(), score()->styleMM(Sid::chordlineThickness) * mag(), PenStyle::SolidLine));
+        painter->setPen(Pen(curColor(), style().styleMM(Sid::chordlineThickness) * mag(), PenStyle::SolidLine));
         painter->setBrush(BrushStyle::NoBrush);
         painter->drawPath(m_path);
     } else {
@@ -206,12 +198,11 @@ std::vector<PointF> ChordLine::gripsPositions(const EditData&) const
         return {};
     }
 
-    double sp = spatium();
     auto n   = m_path.elementCount();
     PointF cp(pagePos());
     if (m_straight) {
         // limit the number of grips to one
-        double offset = 0.5 * sp;
+        double offset = 0.5;
         PointF p;
 
         if (m_chordLineType == ChordLineType::FALL) {
@@ -225,7 +216,7 @@ std::vector<PointF> ChordLine::gripsPositions(const EditData&) const
         }
 
         // translate on the length and height - stops the grips from going past boundaries of slide
-        p += (cp + PointF(m_path.elementAt(1).x * sp, m_path.elementAt(1).y * sp));
+        p += (cp + PointF(m_path.elementAt(1).x, m_path.elementAt(1).y));
         return { p };
     } else {
         std::vector<PointF> grips(n);
@@ -263,7 +254,10 @@ static Note::SlideType slideType(ChordLineType type)
 void ChordLine::setNote(Note* note)
 {
     m_note = note;
-    note->attachSlide(slideType(m_chordLineType));
+
+    if (note) {
+        note->attachSlide(slideType(m_chordLineType));
+    }
 }
 
 //---------------------------------------------------------

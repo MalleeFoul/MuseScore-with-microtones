@@ -377,8 +377,8 @@ void NotationActionController::init()
     registerAction("beam-auto", &Interaction::addBeamToSelectedChordRests, BeamMode::AUTO);
     registerAction("beam-none", &Interaction::addBeamToSelectedChordRests, BeamMode::NONE);
     registerAction("beam-break-left", &Interaction::addBeamToSelectedChordRests, BeamMode::BEGIN);
-    registerAction("beam-break-inner-8th", &Interaction::addBeamToSelectedChordRests, BeamMode::BEGIN32);
-    registerAction("beam-break-inner-16th", &Interaction::addBeamToSelectedChordRests, BeamMode::BEGIN64);
+    registerAction("beam-break-inner-8th", &Interaction::addBeamToSelectedChordRests, BeamMode::BEGIN16);
+    registerAction("beam-break-inner-16th", &Interaction::addBeamToSelectedChordRests, BeamMode::BEGIN32);
     registerAction("beam-join", &Interaction::addBeamToSelectedChordRests, BeamMode::MID);
 
     registerAction("add-brackets", &Interaction::addBracketsToSelection, BracketsType::Brackets);
@@ -431,8 +431,10 @@ void NotationActionController::init()
     registerAction("toggle-hide-empty", &Interaction::execute, &mu::engraving::Score::cmdToggleHideEmpty);
 
     registerAction("mirror-note", &Interaction::execute, &mu::engraving::Score::cmdMirrorNoteHead);
-    registerAction("clef-violin", &Interaction::insertClef, mu::engraving::ClefType::G);
-    registerAction("clef-bass", &Interaction::insertClef, mu::engraving::ClefType::F);
+
+    registerAction("clef-violin", [this]() { insertClef(mu::engraving::ClefType::G); });
+    registerAction("clef-bass", [this]() { insertClef(mu::engraving::ClefType::F); });
+
     registerAction("sharp2-post", &Interaction::changeAccidental, mu::engraving::AccidentalType::SHARP2, PlayMode::PlayNote);
     registerAction("sharp-post", &Interaction::changeAccidental, mu::engraving::AccidentalType::SHARP, PlayMode::PlayNote);
     registerAction("nat-post", &Interaction::changeAccidental, mu::engraving::AccidentalType::NATURAL, PlayMode::PlayNote);
@@ -472,6 +474,7 @@ void NotationActionController::init()
     registerTabPadNoteAction("pad-note-256-TAB", Pad::NOTE256);
     registerTabPadNoteAction("pad-note-512-TAB", Pad::NOTE512);
     registerTabPadNoteAction("pad-note-1024-TAB", Pad::NOTE1024);
+    registerAction("rest-TAB", &Interaction::putRestToSelection);
 
     for (int i = 0; i < MAX_FRET; ++i) {
         registerAction("fret-" + std::to_string(i), [i, this]() { addFret(i); }, &Controller::isTablatureStaff);
@@ -943,6 +946,9 @@ void NotationActionController::move(MoveDirection direction, bool quickly)
             interaction->nudge(direction, quickly);
         } else if (interaction->noteInput()->isNoteInputMode()
                    && interaction->noteInput()->state().staffGroup == mu::engraving::StaffGroup::TAB) {
+            if (quickly) {
+                interaction->movePitch(direction, PitchMode::OCTAVE);
+            }
             interaction->moveSelection(direction, MoveSelectionType::String);
             return;
         } else if (interaction->selection()->isNone()) {
@@ -1158,6 +1164,16 @@ void NotationActionController::addFret(int num)
 
     interaction->addFret(num);
     playSelectedElement(currentNotationElements()->msScore()->playChord());
+}
+
+void NotationActionController::insertClef(mu::engraving::ClefType type)
+{
+    INotationInteractionPtr interaction = currentNotationInteraction();
+    if (!interaction || !interaction->canInsertClef(type)) {
+        return;
+    }
+
+    interaction->insertClef(type);
 }
 
 IInteractive::Result NotationActionController::showErrorMessage(const std::string& message) const
@@ -1786,27 +1802,27 @@ bool NotationActionController::isNotNoteInputMode() const
 
 void NotationActionController::openTupletOtherDialog()
 {
-    interactive()->open("musescore://notation/othertupletdialog");
+    interactive()->open("musescore://notation/othertupletdialog?sync=false");
 }
 
 void NotationActionController::openStaffTextPropertiesDialog()
 {
-    interactive()->open("musescore://notation/stafftextproperties");
+    interactive()->open("musescore://notation/stafftextproperties?sync=false");
 }
 
 void NotationActionController::openMeasurePropertiesDialog()
 {
-    interactive()->open("musescore://notation/measureproperties");
+    interactive()->open("musescore://notation/measureproperties?sync=false");
 }
 
 void NotationActionController::openEditGridSizeDialog()
 {
-    interactive()->open("musescore://notation/editgridsize");
+    interactive()->open("musescore://notation/editgridsize?sync=false");
 }
 
 void NotationActionController::openRealizeChordSymbolsDialog()
 {
-    interactive()->open("musescore://notation/realizechordsymbols");
+    interactive()->open("musescore://notation/realizechordsymbols?sync=false");
 }
 
 void NotationActionController::toggleScoreConfig(ScoreConfigType configType)

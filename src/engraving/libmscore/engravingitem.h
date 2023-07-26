@@ -41,10 +41,6 @@
 #include "shape.h"
 #include "editdata.h"
 
-namespace mu::engraving::layout::v0 {
-class TLayout;
-}
-
 namespace mu::engraving {
 class Factory;
 class XmlReader;
@@ -151,17 +147,8 @@ class EngravingItem : public EngravingObject
     track_idx_t _track = mu::nidx; ///< staffIdx * VOICES + voice
     mutable ElementFlags _flags;
     ///< valid after call to layout()
-    unsigned int _tag;                    ///< tag bitmask
 
     bool m_colorsInversionEnabled = true;
-
-    virtual bool sameVoiceKerningLimited() const { return false; }
-    virtual bool neverKernable() const { return false; }
-    virtual bool alwaysKernable() const { return false; }
-    KerningType _userSetKerning = KerningType::NOT_SET;
-
-    std::vector<Spanner*> _startingSpanners; ///< spanners starting on this item
-    std::vector<Spanner*> _endingSpanners; ///< spanners ending on this item
 
 protected:
     mutable int _z;
@@ -177,14 +164,9 @@ protected:
     void notifyAboutNameChanged();
 #endif
 
-    virtual KerningType doComputeKerningType(const EngravingItem*) const { return KerningType::KERNING; }
-
 public:
 
     virtual ~EngravingItem();
-
-    KerningType computeKerningType(const EngravingItem* nextItem) const;
-    virtual double computePadding(const EngravingItem* nextItem) const;
 
 #ifndef ENGRAVING_NO_ACCESSIBILITY
     virtual void setupAccessible();
@@ -497,9 +479,6 @@ public:
     bool enabled() const { return flag(ElementFlag::ENABLED); }
     void setEnabled(bool val) { setFlag(ElementFlag::ENABLED, val); }
 
-    unsigned int tag() const { return _tag; }
-    void setTag(unsigned int val) { _tag = val; }
-
     bool autoplace() const;
     virtual void setAutoplace(bool v) { setFlag(ElementFlag::NO_AUTOPLACE, !v); }
     bool addToSkyline() const { return !(_flags & (ElementFlag::INVISIBLE | ElementFlag::NO_AUTOPLACE)); }
@@ -564,9 +543,6 @@ public:
     void setColorsInverionEnabled(bool enabled);
 
     std::pair<int, float> barbeat() const;
-
-    std::vector<Spanner*>& startingSpanners() { return _startingSpanners; }
-    std::vector<Spanner*>& endingSpanners() { return _endingSpanners; }
 
 private:
 #ifndef ENGRAVING_NO_ACCESSIBILITY

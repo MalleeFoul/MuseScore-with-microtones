@@ -30,8 +30,8 @@
 
 using namespace mu::appshell;
 
-NewInstanceLoadingScreenView::NewInstanceLoadingScreenView(const QString& openingFileName)
-    : QWidget(nullptr)
+NewInstanceLoadingScreenView::NewInstanceLoadingScreenView(const QString& openingFileName, QWidget* parent)
+    : QWidget(parent)
 {
     setAttribute(Qt::WA_TranslucentBackground);
 
@@ -77,9 +77,9 @@ void NewInstanceLoadingScreenView::draw(QPainter* painter)
     painter->setPen(pen);
 
     QFontMetrics fontMetrics(font);
-    QRectF messageRect(0, 0, m_dialogSize.width(), m_dialogSize.height());
-    messageRect -= QMargins(8, 8, 8, 8);
+    QRectF messageRectangle(0, 0, m_dialogSize.width(), m_dialogSize.height());
+    messageRectangle -= QMargins(8, 8, 8, 8);
 
-    QString elidedText = fontMetrics.elidedText(m_message, Qt::ElideMiddle, messageRect.width());
-    painter->drawText(messageRect, Qt::AlignCenter | Qt::TextDontClip, elidedText);
+    QString elidedText = fontMetrics.elidedText(m_message, Qt::ElideMiddle, messageRectangle.width());
+    painter->drawText(messageRectangle, Qt::AlignCenter | Qt::TextDontClip, elidedText);
 }

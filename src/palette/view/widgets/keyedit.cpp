@@ -40,13 +40,13 @@
 #include "engraving/libmscore/factory.h"
 #include "engraving/style/defaultstyle.h"
 #include "engraving/compat/dummyelement.h"
-#include "engraving/layout/v0/tlayout.h"
 
 #include "types/symnames.h"
 
 #include "keycanvas.h"
 #include "palettewidget.h"
 #include "internal/palettecreator.h"
+#include "internal/palettelayout.h"
 
 #include "log.h"
 
@@ -63,7 +63,7 @@ KeyCanvas::KeyCanvas(QWidget* parent)
     : QFrame(parent)
 {
     setAcceptDrops(true);
-    qreal mag = configuration()->paletteSpatium() * configuration()->paletteScaling() / gpaletteScore->spatium();
+    qreal mag = configuration()->paletteSpatium() * configuration()->paletteScaling() / gpaletteScore->style().spatium();
     _matrix = QTransform(mag, 0.0, 0.0, mag, 0.0, 0.0);
     imatrix = _matrix.inverted();
     dragElement = 0;
@@ -117,7 +117,7 @@ void KeyCanvas::paintEvent(QPaintEvent*)
     qreal ww = double(width());
     double y = wh * .5 - 2 * configuration()->paletteSpatium() * extraMag;
 
-    qreal mag  = configuration()->paletteSpatium() * extraMag / gpaletteScore->spatium();
+    qreal mag  = configuration()->paletteSpatium() * extraMag / gpaletteScore->style().spatium();
     _matrix    = QTransform(mag, 0.0, 0.0, mag, 0.0, y);
     imatrix    = _matrix.inverted();
 
@@ -132,11 +132,11 @@ void KeyCanvas::paintEvent(QPaintEvent*)
     painter.fillRect(background, mu::draw::Color::WHITE);
 
     draw::Pen pen(engravingConfiguration()->defaultColor());
-    pen.setWidthF(engraving::DefaultStyle::defaultStyle().styleS(Sid::staffLineWidth).val() * gpaletteScore->spatium());
+    pen.setWidthF(engraving::DefaultStyle::defaultStyle().styleS(Sid::staffLineWidth).val() * gpaletteScore->style().spatium());
     painter.setPen(pen);
 
     for (int i = 0; i < 5; ++i) {
-        qreal yy = r.y() + i * gpaletteScore->spatium();
+        qreal yy = r.y() + i * gpaletteScore->style().spatium();
         painter.drawLine(LineF(r.x(), yy, r.x() + r.width(), yy));
     }
     if (dragElement) {
@@ -152,8 +152,8 @@ void KeyCanvas::paintEvent(QPaintEvent*)
         painter.restore();
     }
     clef->setPos(0.0, 0.0);
-    layout::v0::LayoutContext lctx(clef->score());
-    layout::v0::TLayout::layoutItem(clef, lctx);
+
+    PaletteLayout::layoutItem(clef);
 
     painter.translate(clef->pagePos());
     clef->draw(&painter);
@@ -231,9 +231,7 @@ void KeyCanvas::dragEnterEvent(QDragEnterEvent* event)
         dragElement->resetExplicitParent();
 
         rw::RWRegister::reader()->readItem(dragElement, e);
-
-        layout::v0::LayoutContext lctx(dragElement->score());
-        layout::v0::TLayout::layoutItem(dragElement, lctx);
+        PaletteLayout::layoutItem(dragElement);
     } else {
         if (MScore::debugMode) {
             LOGD("KeyCanvas::dragEnterEvent: formats:");
@@ -280,7 +278,7 @@ void KeyCanvas::dropEvent(QDropEvent*)
 
 void KeyCanvas::snap(Accidental* a)
 {
-    double _spatium = gpaletteScore->spatium();
+    double _spatium = gpaletteScore->style().spatium();
     double spatium2 = _spatium * .5;
     double y = a->ipos().y();
     int line = round(y / spatium2);
@@ -292,7 +290,7 @@ void KeyCanvas::snap(Accidental* a)
         qreal accidentalGap = DefaultStyle::baseStyle().styleS(Sid::keysigAccidentalDistance).val();
         Accidental* prev = accidentals[i - 1];
         double prevX = prev->ipos().x();
-        qreal prevWidth = prev->symWidth(prev->symbol());
+        qreal prevWidth = prev->symWidth(prev->symId());
         if (!QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier)) {
             a->setPosX(prevX + prevWidth + accidentalGap * _spatium);
         }
@@ -383,7 +381,7 @@ KeyEditor::KeyEditor(const KeyEditor& widget)
 void KeyEditor::addClicked()
 {
     const QList<Accidental*> al = canvas->getAccidentals();
-    double spatium = gpaletteScore->spatium();
+    double spatium = gpaletteScore->style().spatium();
     double xoff = 10000000.0;
 
     for (Accidental* a : al) {
@@ -399,13 +397,13 @@ void KeyEditor::addClicked()
     for (int i = 0; i < al.size(); ++i) {
         Accidental* a = al[i];
         CustDef c;
-        c.sym = a->symbol();
+        c.sym = a->symId();
         PointF pos = a->ipos();
         c.xAlt = (pos.x() - xoff) / spatium;
         if (i > 0) {
             Accidental* prev = al[i - 1];
             PointF prevPos = prev->ipos();
-            qreal prevWidth = prev->symWidth(prev->symbol());
+            qreal prevWidth = prev->symWidth(prev->symId());
             c.xAlt -= (prevPos.x() - xoff + prevWidth) / spatium + accidentalGap;
         }
         int line = static_cast<int>(round((pos.y() / spatium) * 2));

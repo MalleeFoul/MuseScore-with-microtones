@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <museScore version="4.10">
   <Score>
-    <LayerTag id="0" tag="default"></LayerTag>
-    <currentLayer>0</currentLayer>
     <Division>480</Division>
     <Style>
       <Spatium>1.76389</Spatium>
@@ -102,6 +100,9 @@
         </Measure>
       <Measure len="2/4">
         <voice>
+          <KeySig>
+            <concertKey>0</concertKey>
+            </KeySig>
           <Chord>
             <durationType>quarter</durationType>
             <Note>

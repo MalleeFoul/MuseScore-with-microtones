@@ -22,12 +22,8 @@
 
 #include "ledgerline.h"
 
-#include "layout/v0/tlayout.h"
-
 #include "chord.h"
 #include "measure.h"
-#include "score.h"
-#include "staff.h"
 #include "system.h"
 
 #include "log.h"
@@ -39,7 +35,7 @@ namespace mu::engraving {
 //   LedgerLine
 //---------------------------------------------------------
 
-LedgerLine::LedgerLine(Score* s)
+LedgerLine::LedgerLine(EngravingItem* s)
     : EngravingItem(ElementType::LEDGER_LINE, s)
 {
     setSelectable(false);
@@ -102,7 +98,6 @@ void LedgerLine::spatiumChanged(double oldValue, double newValue)
 {
     _width = (_width / oldValue) * newValue;
     _len   = (_len / oldValue) * newValue;
-    layout::v0::LayoutContext ctx(score());
-    layout::v0::TLayout::layout(this, ctx);
+    layout()->layoutItem(this);
 }
 }

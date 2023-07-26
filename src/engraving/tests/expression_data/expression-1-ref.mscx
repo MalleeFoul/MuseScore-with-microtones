@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <museScore version="4.10">
   <Score>
-    <LayerTag id="0" tag="default"></LayerTag>
-    <currentLayer>0</currentLayer>
     <Division>480</Division>
     <Style>
       <Spatium>1.74978</Spatium>
@@ -93,7 +91,7 @@
       <Measure>
         <voice>
           <KeySig>
-            <accidental>0</accidental>
+            <concertKey>0</concertKey>
             </KeySig>
           <TimeSig>
             <sigN>4</sigN>
@@ -115,6 +113,8 @@
         <voice>
           <Expression>
             <placement>above</placement>
+            <snapToDynamics>0</snapToDynamics>
+            <offset x="0" y="2.5"/>
             <text>expr text</text>
             </Expression>
           <Chord>

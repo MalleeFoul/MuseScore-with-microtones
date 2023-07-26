@@ -22,6 +22,7 @@
 #ifndef MU_CLOUD_CLOUDTYPES_H
 #define MU_CLOUD_CLOUDTYPES_H
 
+#include <QDate>
 #include <QUrl>
 
 namespace mu::cloud {
@@ -116,6 +117,37 @@ struct ScoreInfo {
         return id > 0 && !title.isEmpty();
     }
 };
+
+struct ScoresList {
+    struct Item {
+        int id = 0;
+        QString title;
+        QDateTime lastModified;
+        QString thumbnailUrl;
+    };
+
+    std::vector<Item> items;
+
+    /// See explanation at `IMuseScoreComService::downloadScoresList`
+    struct Meta {
+        int totalScoresCount = 0;
+        int batchesCount = 0;
+        int thisBatchNumber = 0;
+        int scoresPerBatch = 0;
+    } meta;
+};
+
+constexpr int INVALID_SCORE_ID = 0;
+
+inline int scoreIdFromSourceUrl(const QUrl& sourceUrl)
+{
+    QStringList parts = sourceUrl.toString().split("/");
+    if (parts.isEmpty()) {
+        return INVALID_SCORE_ID;
+    }
+
+    return parts.last().toInt();
+}
 }
 
 #endif // MU_CLOUD_ACCOUNTTYPES_H

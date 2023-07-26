@@ -52,6 +52,7 @@ using namespace mu::notation;
 using namespace mu::engraving;
 
 static const QString EDIT_DRUMSET_DIALOG_NAME("EditDrumsetDialog");
+static const std::string_view POSSIBLE_SHORTCUTS("ABCDEFG");
 
 enum Column : char {
     PITCH, NOTE, SHORTCUT, NAME
@@ -375,11 +376,14 @@ void EditDrumsetDialog::shortcutChanged()
     }
 
     int pitch = item->data(Column::PITCH, Qt::UserRole).toInt();
+    int index = shortcut->currentIndex();
+    bool invalidIndex = index < 0 || index >= static_cast<int>(POSSIBLE_SHORTCUTS.size());
     int sc;
-    if (shortcut->currentIndex() == 7) {
+
+    if (invalidIndex) {
         sc = 0;
     } else {
-        sc = "ABCDEFG"[shortcut->currentIndex()];
+        sc = POSSIBLE_SHORTCUTS[index];
     }
 
     if (QString(QChar(m_editedDrumset.drum(pitch).shortcut)) != shortcut->currentText()) {
@@ -395,7 +399,7 @@ void EditDrumsetDialog::shortcutChanged()
             }
         }
         m_editedDrumset.drum(pitch).shortcut = sc;
-        if (shortcut->currentIndex() == 7) {
+        if (invalidIndex) {
             item->setText(Column::SHORTCUT, "");
         } else {
             item->setText(Column::SHORTCUT, shortcut->currentText());
@@ -493,10 +497,12 @@ void EditDrumsetDialog::itemChanged(QTreeWidgetItem* current, QTreeWidgetItem* p
 
         m_editedDrumset.drum(pitch).line          = staffLine->value();
         m_editedDrumset.drum(pitch).voice         = voice->currentIndex();
-        if (shortcut->currentIndex() == 7) {
+        int index = shortcut->currentIndex();
+
+        if (index < 0 || index >= static_cast<int>(POSSIBLE_SHORTCUTS.size())) {
             m_editedDrumset.drum(pitch).shortcut = 0;
         } else {
-            m_editedDrumset.drum(pitch).shortcut = "ABCDEFG"[shortcut->currentIndex()];
+            m_editedDrumset.drum(pitch).shortcut = POSSIBLE_SHORTCUTS[index];
         }
         m_editedDrumset.drum(pitch).stemDirection = DirectionV(stemDirection->currentIndex());
         previous->setText(Column::NAME, m_editedDrumset.translatedName(pitch));
@@ -610,13 +616,13 @@ void EditDrumsetDialog::updateExample()
     note->setPitch(pitch);
     note->setTpcFromPitch();
     note->setLine(line);
-    note->setPos(0.0, gpaletteScore->spatium() * .5 * line);
+    note->setPos(0.0, gpaletteScore->style().spatium() * .5 * line);
     note->setHeadType(NoteHeadType::HEAD_QUARTER);
     note->setHeadGroup(nh);
     note->setCachedNoteheadSym(SymNames::symIdByName(quarterCmb->currentData().toString()));
     chord->add(note);
     Stem* stem = Factory::createStem(chord.get());
-    stem->setBaseLength(Millimetre((up ? -3.0 : 3.0) * gpaletteScore->spatium()));
+    stem->setBaseLength(Millimetre((up ? -3.0 : 3.0) * gpaletteScore->style().spatium()));
     chord->add(stem);
     drumNote->appendElement(chord, m_editedDrumset.translatedName(pitch));
 }
@@ -696,7 +702,7 @@ void EditDrumsetDialog::save()
     xml.startElement("museScore", { { "version", Constants::MSC_VERSION_STR } });
     m_editedDrumset.save(xml);
     xml.endElement();
-    if (f.error() != File::NoError) {
+    if (f.hasError()) {
         QString s = mu::qtrc("palette", "Writing file failed: %1").arg(QString::fromStdString(f.errorString()));
         interactive()->error(mu::trc("palette", "Write drumset"), s.toStdString());
     }

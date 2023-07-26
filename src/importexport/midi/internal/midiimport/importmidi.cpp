@@ -328,8 +328,20 @@ void MTrack::processMeta(int tick, const MidiEvent& mm)
             break;
         }
         KeySigEvent ke;
-        ke.setKey(Key(key));
-        staff->setKey(Fraction::fromTicks(tick), ke);
+        Key tKey = Key(key);
+        Key cKey = tKey;
+        Fraction t = Fraction::fromTicks(tick);
+        Interval v = staff->part()->instrument(t)->transpose();
+        if (!v.isZero() && !cs->style().styleB(Sid::concertPitch)) {
+            cKey = transposeKey(tKey, v);
+            // if there are more than 6 accidentals in transposing key, it cannot be PreferSharpFlat::AUTO
+            if ((tKey > 6 || tKey < -6) && staff->part()->preferSharpFlat() == PreferSharpFlat::AUTO) {
+                staff->part()->setPreferSharpFlat(PreferSharpFlat::NONE);
+            }
+        }
+        ke.setConcertKey(cKey);
+        ke.setKey(tKey);
+        staff->setKey(t, ke);
         hasKey = true;
     }
     break;
@@ -614,7 +626,13 @@ void MTrack::createKeys(Key defaultKey, const KeyList& allKeyList)
     if (!hasKey && !mtrack->drumTrack()) {
         if (allKeyList.empty()) {
             KeySigEvent ke;
-            ke.setKey(defaultKey);
+            Interval v = staff->part()->instrument()->transpose();
+            ke.setConcertKey(defaultKey);
+            if (!v.isZero() && !staff->score()->style().styleB(Sid::concertPitch)) {
+                v.flip();
+                Key tKey = transposeKey(defaultKey, v);
+                ke.setKey(tKey);
+            }
             staffKeyList[0] = ke;
             MidiKey::assignKeyListToStaff(staffKeyList, staff);
         } else {

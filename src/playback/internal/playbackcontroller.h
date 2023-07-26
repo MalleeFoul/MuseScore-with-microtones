@@ -78,7 +78,7 @@ public:
     async::Notification currentTrackSequenceIdChanged() const override;
 
     const InstrumentTrackIdMap& instrumentTrackIdMap() const override;
-    const audio::TrackIdList& auxTrackIdList() const override;
+    const AuxTrackIdMap& auxTrackIdMap() const override;
 
     async::Channel<audio::TrackId> trackAdded() const override;
     async::Channel<audio::TrackId> trackRemoved() const override;
@@ -179,6 +179,7 @@ private:
     void setupSequencePlayer();
 
     void updateMuteStates();
+    void updateAuxMuteStates();
 
     void setCurrentPlaybackTime(audio::msecs_t msecs);
 
@@ -220,12 +221,13 @@ private:
     async::Channel<audio::aux_channel_idx_t, std::string> m_auxChannelNameChanged;
 
     InstrumentTrackIdMap m_instrumentTrackIdMap;
-    audio::TrackIdList m_auxTrackIdList;
+    AuxTrackIdMap m_auxTrackIdMap;
 
     framework::Progress m_loadingProgress;
     size_t m_loadingTrackCount = 0;
 
     bool m_isExportingAudio = false;
+    bool m_isRangeSelection = false;
 };
 }
 

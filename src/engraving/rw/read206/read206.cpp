@@ -34,7 +34,7 @@
 
 #include "style/style.h"
 #include "style/textstyle.h"
-#include "layout/v0/tlayout.h"
+
 #include "types/symnames.h"
 #include "types/typesconv.h"
 
@@ -836,7 +836,7 @@ static void readNote206(Note* note, XmlReader& e, ReadContext& ctx)
     }
     if (!(tpcIsValid(note->tpc1()) && tpcIsValid(note->tpc2()))) {
         Fraction tick = note->chord() ? note->chord()->tick() : Fraction(-1, 1);
-        Interval v = note->staff() ? note->part()->instrument(tick)->transpose() : Interval();
+        Interval v = note->staff() ? note->staff()->transpose(tick) : Interval();
         if (tpcIsValid(note->tpc1())) {
             v.flip();
             if (v.isZero()) {
@@ -1582,8 +1582,15 @@ bool Read206::readChordRestProperties206(XmlReader& e, ReadContext& ctx, ChordRe
             }
         }
     } else if (tag == "BeamMode") {
-        BeamMode bm = TConv::fromXml(e.readAsciiText(), BeamMode::AUTO);
-        ch->setBeamMode(bm);
+        // 206 used begin32/begin64 for beam mode
+        // 410 uses begin16/begin32
+        auto txt = e.readAsciiText();
+        if (txt == "begin64") {
+            txt = "begin32";
+        } else if (txt == "begin32") {
+            txt = "begin16";
+        }
+        ch->setBeamMode(TConv::fromXml(txt, BeamMode::AUTO));
     } else if (tag == "Articulation") {
         EngravingItem* el = readArticulation(ch, e, ctx);
         if (el->isFermata()) {
@@ -1980,16 +1987,19 @@ static bool readTextLineProperties(XmlReader& e, ReadContext& ctx, TextLineBase*
         Text* text = Factory::createText(ctx.dummy(), TextStyleType::DEFAULT, false);
         readText206(e, ctx, text, tl);
         tl->setBeginText(text->xmlText());
+        tl->setPropertyFlags(Pid::BEGIN_TEXT, PropertyFlags::UNSTYLED);
         delete text;
     } else if (tag == "continueText") {
         Text* text = Factory::createText(ctx.dummy(), TextStyleType::DEFAULT, false);
         readText206(e, ctx, text, tl);
         tl->setContinueText(text->xmlText());
+        tl->setPropertyFlags(Pid::CONTINUE_TEXT, PropertyFlags::UNSTYLED);
         delete text;
     } else if (tag == "endText") {
         Text* text = Factory::createText(ctx.dummy(), TextStyleType::DEFAULT, false);
         readText206(e, ctx, text, tl);
         tl->setEndText(text->xmlText());
+        tl->setPropertyFlags(Pid::END_TEXT, PropertyFlags::UNSTYLED);
         delete text;
     } else if (tag == "beginHook") {
         tl->setBeginHookType(e.readBool() ? HookType::HOOK_90 : HookType::NONE);
@@ -2278,7 +2288,7 @@ EngravingItem* Read206::readArticulation(EngravingItem* parent, XmlReader& e, Re
             case SymId::fermataVeryLongAbove:
             case SymId::fermataVeryLongBelow: {
                 Fermata* fe = Factory::createFermata(ctx.dummy());
-                fe->setSymId(sym);
+                fe->setSymIdAndTimeStretch(sym);
                 el = fe;
             } break;
             default:
@@ -2316,7 +2326,7 @@ EngravingItem* Read206::readArticulation(EngravingItem* parent, XmlReader& e, Re
     // Special case for "no type" = ufermata, with missing subtype tag
     if (!el) {
         Fermata* f = Factory::createFermata(ctx.dummy());
-        f->setSymId(sym);
+        f->setSymIdAndTimeStretch(sym);
         el = f;
     }
     if (el->isFermata()) {
@@ -2503,8 +2513,7 @@ static void readMeasure206(Measure* m, int staffIdx, XmlReader& e, ReadContext& 
             }
             segment = m->getSegment(st, ctx.tick());
             segment->add(bl);
-            layout::v0::LayoutContext lctx(bl->score());
-            layout::v0::TLayout::layout(bl, lctx);
+            EngravingItem::layout()->layoutItem(bl);
             if (fermataAbove) {
                 segment->add(fermataAbove);
             }
@@ -3204,21 +3213,11 @@ bool Read206::readScore206(Score* score, XmlReader& e, ReadContext& ctx)
         } else if (tag == "playMode") {
             score->setPlayMode(PlayMode(e.readInt()));
         } else if (tag == "LayerTag") {
-            int id = e.intAttribute("id");
-            const String& t = e.attribute("tag");
-            String val(e.readText());
-            if (id >= 0 && id < 32) {
-                score->layerTags()[id] = t;
-                score->layerTagComments()[id] = val;
-            }
+            e.skipCurrentElement();
         } else if (tag == "Layer") {
-            Layer layer;
-            layer.name = e.attribute("name");
-            layer.tags = static_cast<unsigned int>(e.intAttribute("mask"));
-            score->layer().push_back(layer);
-            e.readNext();
+            e.skipCurrentElement();
         } else if (tag == "currentLayer") {
-            score->setCurrentLayer(e.readInt());
+            e.skipCurrentElement();
         } else if (tag == "Synthesizer") {
             score->synthesizerState().read(e);
         } else if (tag == "page-offset") {
@@ -3450,13 +3449,6 @@ Err Read206::readScore(Score* score, XmlReader& e, ReadInOutData* out)
     }
 
     compat::CompatUtils::doCompatibilityConversions(score->masterScore());
-
-    // fix positions
-    //    offset = saved offset - layout position
-    score->doLayout();
-    for (auto i : ctx.fixOffsets()) {
-        i.first->setOffset(i.second - i.first->pos());
-    }
 
     return Err::NoError;
 }

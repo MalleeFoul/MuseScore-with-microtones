@@ -25,8 +25,6 @@
 
 #include "draw/types/brush.h"
 
-#include "layout/v0/tlayout.h"
-
 #include "beam.h"
 #include "chord.h"
 #include "hook.h"
@@ -71,15 +69,13 @@ bool Stem::up() const
 void Stem::setBaseLength(Millimetre baseLength)
 {
     m_baseLength = Millimetre(std::abs(baseLength.val()));
-    layout::v0::LayoutContext ctx(score());
-    layout::v0::TLayout::layout(this, ctx);
+    layout()->layoutItem(this);
 }
 
 void Stem::spatiumChanged(double oldValue, double newValue)
 {
     m_userLength = (m_userLength / oldValue) * newValue;
-    layout::v0::LayoutContext ctx(score());
-    layout::v0::TLayout::layout(this, ctx);
+    layout()->layoutItem(this);
 }
 
 //! In chord coordinates
@@ -153,7 +149,7 @@ void Stem::draw(mu::draw::Painter* painter) const
     if (nDots > 0 && !staffType->stemThrough()) {
         double x     = chord()->dotPosX();
         double y     = ((STAFFTYPE_TAB_DEFAULTSTEMLEN_DN * 0.2) * sp) * (isUp ? -1.0 : 1.0);
-        double step  = score()->styleS(Sid::dotDotDistance).val() * sp;
+        double step  = style().styleS(Sid::dotDotDistance).val() * sp;
         for (int dot = 0; dot < nDots; dot++, x += step) {
             drawSymbol(SymId::augmentationDot, painter, PointF(x, y));
         }
@@ -183,8 +179,7 @@ void Stem::editDrag(EditData& ed)
 {
     double yDelta = ed.delta.y();
     m_userLength += up() ? Millimetre(-yDelta) : Millimetre(yDelta);
-    layout::v0::LayoutContext ctx(score());
-    layout::v0::TLayout::layout(this, ctx);
+    layout()->layoutItem(this);
     Chord* c = chord();
     if (c->hook()) {
         c->hook()->move(PointF(0.0, yDelta));

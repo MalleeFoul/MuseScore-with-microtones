@@ -255,14 +255,14 @@ Accidental::Accidental(EngravingItem* parent)
 
 TranslatableString Accidental::subtypeUserName() const
 {
-    return TranslatableString("engraving/sym", SymNames::userNameForSymId(symbol()));
+    return TranslatableString("engraving/sym", SymNames::userNameForSymId(symId()));
 }
 
 //---------------------------------------------------------
 //   symbol
 //---------------------------------------------------------
 
-SymId Accidental::symbol() const
+SymId Accidental::symId() const
 {
     return accList[int(accidentalType())].sym;
 }
@@ -301,6 +301,15 @@ SymId Accidental::subtype2symbol(AccidentalType st)
 }
 
 //---------------------------------------------------------
+//   subtype2centoffset
+//---------------------------------------------------------
+
+double Accidental::subtype2centOffset(AccidentalType st)
+{
+    return accList[int(st)].centOffset;
+}
+
+//---------------------------------------------------------
 //   name2subtype
 //---------------------------------------------------------
 
@@ -334,7 +343,7 @@ void Accidental::computeMag()
 {
     double m = explicitParent() ? parentItem()->mag() : 1.0;
     if (isSmall()) {
-        m *= score()->styleD(Sid::smallNoteMag);
+        m *= style().styleD(Sid::smallNoteMag);
     }
     setMag(m);
 }
@@ -385,6 +394,10 @@ bool Accidental::acceptDrop(EditData& data) const
 {
     EngravingItem* e = data.dropElement;
 
+    if (e->type() == ElementType::ACCIDENTAL) {
+        return true;
+    }
+
     if (e->isActionIcon()) {
         ActionIconType type = toActionIcon(e)->actionType();
         return type == ActionIconType::PARENTHESES
@@ -402,6 +415,9 @@ EngravingItem* Accidental::drop(EditData& data)
 {
     EngravingItem* e = data.dropElement;
     switch (e->type()) {
+    case ElementType::ACCIDENTAL:
+        score()->changeAccidental(note(), toAccidental(e)->accidentalType());
+        break;
     case ElementType::ACTION_ICON:
         switch (toActionIcon(e)->actionType()) {
         case ActionIconType::PARENTHESES:

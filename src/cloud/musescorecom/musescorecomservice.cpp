@@ -22,6 +22,7 @@
 
 #include "musescorecomservice.h"
 
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QBuffer>
@@ -47,6 +48,8 @@ static const QUrl MUSESCORECOM_SCORE_MANAGER_URL(MUSESCORECOM_CLOUD_URL + "/my-s
 static const QUrl MUSESCORECOM_USER_INFO_API_URL(MUSESCORECOM_API_ROOT_URL + "/me");
 
 static const QUrl MUSESCORECOM_SCORE_INFO_API_URL(MUSESCORECOM_API_ROOT_URL + "/score/info");
+static const QUrl MUSESCORECOM_SCORES_LIST_API_URL(MUSESCORECOM_API_ROOT_URL + "/collection/scores");
+static const QUrl MUSESCORECOM_DOWNLOAD_SCORE_API_URL(MUSESCORECOM_API_ROOT_URL + "/score/download");
 static const QUrl MUSESCORECOM_UPLOAD_SCORE_API_URL(MUSESCORECOM_API_ROOT_URL + "/score/upload");
 static const QUrl MUSESCORECOM_UPLOAD_AUDIO_API_URL(MUSESCORECOM_API_ROOT_URL + "/score/audio");
 
@@ -54,18 +57,6 @@ static const QString SCORE_ID_KEY("score_id");
 static const QString EDITOR_SOURCE_KEY("editor_source");
 static const QString EDITOR_SOURCE_VALUE(QString("Musescore Editor %1").arg(MUSESCORE_VERSION));
 static const QString PLATFORM_KEY("platform");
-
-static constexpr int INVALID_SCORE_ID = 0;
-
-static int scoreIdFromSourceUrl(const QUrl& sourceUrl)
-{
-    QStringList parts = sourceUrl.toString().split("/");
-    if (parts.isEmpty()) {
-        return INVALID_SCORE_ID;
-    }
-
-    return parts.last().toInt();
-}
 
 MuseScoreComService::MuseScoreComService(QObject* parent)
     : AbstractCloudService(parent)
@@ -150,7 +141,7 @@ mu::Ret MuseScoreComService::downloadAccountInfo()
     QJsonObject user = document.object();
 
     AccountInfo info;
-    info.id = user.value("id").toInt();
+    info.id = QString::number(user.value("id").toInt());
     info.userName = user.value("name").toString();
     QString profileUrl = user.value("profile_url").toString();
     info.profileUrl = QUrl(profileUrl);
@@ -247,6 +238,103 @@ mu::RetVal<ScoreInfo> MuseScoreComService::downloadScoreInfo(int scoreId)
     result.val.owner.profileUrl = owner.value("custom_url").toString();
 
     return result;
+}
+
+mu::async::Promise<ScoresList> MuseScoreComService::downloadScoresList(int scoresPerBatch, int batchNumber)
+{
+    return async::Promise<ScoresList>([this, scoresPerBatch, batchNumber](auto resolve, auto reject) {
+        QVariantMap params;
+        params["per-page"] = scoresPerBatch;
+        params["page"] = batchNumber;
+
+        RetVal<QUrl> scoresListUrl = prepareUrlForRequest(MUSESCORECOM_SCORES_LIST_API_URL, params);
+        if (!scoresListUrl.ret) {
+            return reject(scoresListUrl.ret.code(), scoresListUrl.ret.toString());
+        }
+
+        QBuffer receivedData;
+        INetworkManagerPtr manager = networkManagerCreator()->makeNetworkManager();
+        Ret ret = manager->get(scoresListUrl.val, &receivedData, headers());
+
+        if (!ret) {
+            printServerReply(receivedData);
+            return reject(ret.code(), ret.toString());
+        }
+
+        ScoresList result;
+
+        QJsonDocument document = QJsonDocument::fromJson(receivedData.data());
+        QJsonObject obj = document.object();
+
+        QJsonObject metaObj = obj.value("_meta").toObject();
+        result.meta.totalScoresCount = metaObj.value("totalCount").toInt();
+        result.meta.batchesCount = metaObj.value("pageCount").toInt();
+        result.meta.thisBatchNumber = metaObj.value("currentPage").toInt();
+        result.meta.scoresPerBatch = metaObj.value("perPage").toInt();
+
+        if (result.meta.thisBatchNumber < batchNumber) {
+            // This happens when the requested page number was too high.
+            // In this situation, the API just returns the last page and the items from that page.
+            // We will return just an empty list, in order not to confuse the caller.
+            return resolve(result);
+        }
+
+        QJsonArray items = obj.value("items").toArray();
+
+        for (const QJsonValue itemVal : items) {
+            QJsonObject itemObj = itemVal.toObject();
+
+            ScoresList::Item item;
+            item.id = itemObj.value("id").toInt();
+            item.title = itemObj.value("title").toString();
+            item.lastModified = QDateTime::fromSecsSinceEpoch(itemObj.value("date_updated").toInt());
+            item.thumbnailUrl = itemObj.value("thumbnails").toObject().value("small").toString();
+
+            result.items.push_back(item);
+        }
+
+        return resolve(result);
+    });
+}
+
+ProgressPtr MuseScoreComService::downloadScore(int scoreId, QIODevice& scoreData)
+{
+    ProgressPtr progress = std::make_shared<Progress>();
+
+    INetworkManagerPtr manager = networkManagerCreator()->makeNetworkManager();
+    manager->progress().progressChanged.onReceive(this, [progress](int64_t current, int64_t total, const std::string& message) {
+        progress->progressChanged.send(current, total, message);
+    });
+
+    async::Async::call(this, [this, manager, scoreId, &scoreData, progress]() {
+        progress->started.notify();
+
+        ProgressResult result;
+        result.ret = executeRequest([this, manager, scoreId, &scoreData]() {
+            return doDownloadScore(manager, scoreId, scoreData);
+        });
+
+        progress->finished.send(result);
+    });
+
+    return progress;
+}
+
+mu::Ret MuseScoreComService::doDownloadScore(network::INetworkManagerPtr downloadManager, int scoreId, QIODevice& scoreData)
+{
+    TRACEFUNC;
+
+    QVariantMap params;
+    params["score_id"] = scoreId;
+
+    RetVal<QUrl> downloadUrl = prepareUrlForRequest(MUSESCORECOM_DOWNLOAD_SCORE_API_URL, params);
+    if (!downloadUrl.ret) {
+        return downloadUrl.ret;
+    }
+
+    Ret ret = downloadManager->get(downloadUrl.val, &scoreData, headers());
+
+    return uploadingDownloadingRetFromRawRet(ret);
 }
 
 ProgressPtr MuseScoreComService::uploadScore(QIODevice& scoreData, const QString& title, Visibility visibility, const QUrl& sourceUrl,
@@ -390,7 +478,7 @@ mu::RetVal<mu::ValMap> MuseScoreComService::doUploadScore(INetworkManagerPtr upl
     if (!ret) {
         printServerReply(receivedData);
 
-        result.ret = uploadingRetFromRawUploadingRet(ret, isScoreAlreadyUploaded);
+        result.ret = uploadingDownloadingRetFromRawRet(ret, isScoreAlreadyUploaded);
 
         return result;
     }

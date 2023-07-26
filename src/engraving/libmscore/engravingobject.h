@@ -66,6 +66,7 @@ class Chord;
 class ChordLine;
 class ChordRest;
 class Clef;
+class Capo;
 class DeadSlapped;
 class DurationElement;
 class Dynamic;
@@ -254,7 +255,7 @@ public:
     Score* score() const;
     MasterScore* masterScore() const;
     bool onSameScore(const EngravingObject* other) const;
-    const MStyle* style() const;
+    const MStyle& style() const;
 
     virtual PropertyValue getProperty(Pid) const = 0;
     virtual bool setProperty(Pid, const PropertyValue&) = 0;
@@ -416,6 +417,7 @@ public:
     CONVERT(StaffText,     STAFF_TEXT)
     CONVERT(SystemText,    SYSTEM_TEXT)
     CONVERT(PlayTechAnnotation, PLAYTECH_ANNOTATION)
+    CONVERT(Capo,          CAPO)
     CONVERT(BracketItem,   BRACKET_ITEM)
     CONVERT(Score,         SCORE)
     CONVERT(Staff,         STAFF)
@@ -504,7 +506,7 @@ public:
 
     bool isStaffTextBase() const
     {
-        return isStaffText() || isSystemText() || isTripletFeel() || isPlayTechAnnotation();
+        return isStaffText() || isSystemText() || isTripletFeel() || isPlayTechAnnotation() || isCapo();
     }
 
     bool isArticulationFamily() const
@@ -699,6 +701,7 @@ CONVERT(Volta)
 CONVERT(Jump)
 CONVERT(StaffText)
 CONVERT(PlayTechAnnotation)
+CONVERT(Capo)
 CONVERT(Ottava)
 CONVERT(LayoutBreak)
 CONVERT(Segment)

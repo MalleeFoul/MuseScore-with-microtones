@@ -116,6 +116,16 @@ NotifyList<const Staff*> NotationParts::staffList(const ID& partId) const
     return result;
 }
 
+bool NotationParts::hasParts() const
+{
+    const Score* score = this->score();
+    if (!score) {
+        return false;
+    }
+
+    return !score->parts().empty();
+}
+
 const Part* NotationParts::part(const ID& partId) const
 {
     return partModifiable(partId);
@@ -290,7 +300,7 @@ void NotationParts::setPartSharpFlat(const ID& partId, const SharpFlat& sharpFla
 
     startEdit();
 
-    mu::engraving::Interval oldTransposition = part->instrument()->transpose();
+    mu::engraving::Interval oldTransposition = part->staff(0)->transpose(DEFAULT_TICK);
 
     part->undoChangeProperty(mu::engraving::Pid::PREFER_SHARP_FLAT, shartFlatInt);
     score()->transpositionChanged(part, oldTransposition);
@@ -709,7 +719,7 @@ void NotationParts::onPartsRemoved(const std::vector<Part*>&)
 void NotationParts::doAppendStaff(Staff* staff, Part* destinationPart)
 {
     staff_idx_t staffLocalIndex = destinationPart->nstaves();
-    mu::engraving::KeyList keyList = score()->keyList();
+    mu::engraving::KeyList keyList = *destinationPart->staff(staffLocalIndex - 1)->keyList();
 
     staff->setScore(score());
     staff->setPart(destinationPart);

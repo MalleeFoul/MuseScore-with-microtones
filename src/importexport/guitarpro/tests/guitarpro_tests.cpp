@@ -39,7 +39,7 @@ using namespace mu::engraving;
 static const String GUITARPRO_DIR(u"data/");
 
 namespace mu::iex::guitarpro {
-extern Err importGTP(MasterScore*, mu::io::IODevice* io, bool createLinkedTabForce = false);
+extern Err importGTP(MasterScore*, mu::io::IODevice* io, bool createLinkedTabForce = false, bool experimental = false);
 
 class GuitarPro_Tests : public ::testing::Test
 {
@@ -62,15 +62,6 @@ void GuitarPro_Tests::gpReadTest(const char* file, const char* ext)
     delete score;
 }
 
-TEST_F(GuitarPro_Tests, gpTestIrrTuplet) {
-    gpReadTest("testIrrTuplet", "gp");
-}
-TEST_F(GuitarPro_Tests, gpxTestIrrTuplet) {
-    gpReadTest("testIrrTuplet", "gpx");
-}
-TEST_F(GuitarPro_Tests, gp4TestIrrTuplet) {
-    gpReadTest("testIrrTuplet", "gp4");
-}
 TEST_F(GuitarPro_Tests, gpSforzato) {
     gpReadTest("sforzato", "gp");
 }
@@ -730,5 +721,32 @@ TEST_F(GuitarPro_Tests, gpxInstrumentChange1beat) {
 }
 TEST_F(GuitarPro_Tests, gpFixEmptyMeasures) {
     gpReadTest("mmrest", "gp");
+}
+TEST_F(GuitarPro_Tests, gpLineElements) {
+    gpReadTest("line_elements", "gp");
+}
+TEST_F(GuitarPro_Tests, gp5LineElements) {
+    gpReadTest("line_elements", "gp5");
+}
+TEST_F(GuitarPro_Tests, gp5LetRingTied) {
+    gpReadTest("let-ring-tied", "gp5");
+}
+TEST_F(GuitarPro_Tests, gpPercussionBeams) {
+    gpReadTest("percussion-beams", "gp");
+}
+TEST_F(GuitarPro_Tests, gpSpannerInUncompleteMeasure) {
+    gpReadTest("spanner-in-uncomplete-measure", "gp");
+}
+TEST_F(GuitarPro_Tests, gp5SpannerInUncompleteMeasure) {
+    gpReadTest("spanner-in-uncomplete-measure", "gp5");
+}
+TEST_F(GuitarPro_Tests, gpBarlineLastMeasure) {
+    gpReadTest("barline-last-measure", "gp");
+}
+TEST_F(GuitarPro_Tests, gpBeamModes) {
+    gpReadTest("beam-modes", "gp");
+}
+TEST_F(GuitarPro_Tests, gpHideRests) {
+    gpReadTest("hide-rests", "gp");
 }
 }

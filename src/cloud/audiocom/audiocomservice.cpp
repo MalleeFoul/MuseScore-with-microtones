@@ -29,14 +29,13 @@
 
 #include "async/async.h"
 #include "containers.h"
-#include "types/translatablestring.h"
 
 #include "clouderrors.h"
-#include "network/networkerrors.h"
 
 #include "log.h"
 
 using namespace mu;
+using namespace mu::cloud;
 using namespace mu::network;
 using namespace mu::framework;
 
@@ -199,15 +198,13 @@ ProgressPtr AudioComService::uploadAudio(QIODevice& audioData, const QString& au
         progress->progressChanged.send(current, total, message);
     });
 
-    QJsonObject audioInfo;
-
-    auto createAudioCallback = [this, manager, &audioData, title, audioFormat, visibility, &audioInfo]() {
+    auto createAudioCallback = [this, manager, &audioData, title, audioFormat, visibility]() {
         qint64 size = audioData.size();
-        return doCreateAudio(title, size, audioFormat, visibility, audioInfo);
+        return doCreateAudio(manager, title, size, audioFormat, visibility);
     };
 
-    auto uploadCallback = [this, manager, &audioData, audioFormat, &audioInfo]() {
-        return doUploadAudio(manager, audioData, audioFormat, audioInfo);
+    auto uploadCallback = [this, manager, &audioData, audioFormat]() {
+        return doUploadAudio(manager, audioData, audioFormat);
     };
 
     async::Async::call(this, [this, progress, createAudioCallback, uploadCallback]() {
@@ -228,21 +225,27 @@ ProgressPtr AudioComService::uploadAudio(QIODevice& audioData, const QString& au
 
         result.ret = ret;
 
+        m_currentUploadingAudioSlug.clear();
+        m_currentUploadingAudioInfo = {};
+
         progress->finished.send(result);
     });
 
     return progress;
 }
 
-mu::Ret AudioComService::doUploadAudio(network::INetworkManagerPtr uploadManager, QIODevice& audioData, const QString& audioFormat,
-                                       const QJsonObject& audioInfo)
+mu::Ret AudioComService::doUploadAudio(network::INetworkManagerPtr uploadManager, QIODevice& audioData, const QString& audioFormat)
 {
     TRACEFUNC;
 
-    QUrl url = QUrl(audioInfo.value("url").toString());
-    QUrl success = QUrl(audioInfo.value("success").toString());
-    QUrl fail = QUrl(audioInfo.value("fail").toString());
-    QUrl progress = QUrl(audioInfo.value("progress").toString());
+    IF_FAILED(!m_currentUploadingAudioInfo.isEmpty()) {
+        return make_ret(Err::UnknownError);
+    }
+
+    QUrl url = QUrl(m_currentUploadingAudioInfo.value("url").toString());
+    QUrl success = QUrl(m_currentUploadingAudioInfo.value("success").toString());
+    QUrl fail = QUrl(m_currentUploadingAudioInfo.value("fail").toString());
+    QUrl progress = QUrl(m_currentUploadingAudioInfo.value("progress").toString());
 
     if (!url.isValid() || !success.isValid() || !fail.isValid() || !progress.isValid()) {
         return make_ret(Err::UnknownError);
@@ -252,7 +255,7 @@ mu::Ret AudioComService::doUploadAudio(network::INetworkManagerPtr uploadManager
 
     QHttpMultiPart multiPart(QHttpMultiPart::FormDataType);
 
-    QJsonObject fields = audioInfo.value("fields").toObject();
+    QJsonObject fields = m_currentUploadingAudioInfo.value("fields").toObject();
     for (const QString& fieldName : fields.keys()) {
         QHttpPart part;
         part.setHeader(QNetworkRequest::ContentDispositionHeader, QVariant("form-data; name=\"" + fieldName + "\""));
@@ -260,7 +263,7 @@ mu::Ret AudioComService::doUploadAudio(network::INetworkManagerPtr uploadManager
         multiPart.append(part);
     }
 
-    QString fileField = audioInfo.contains("field") ? audioInfo.value("field").toString() : "file";
+    QString fileField = m_currentUploadingAudioInfo.contains("field") ? m_currentUploadingAudioInfo.value("field").toString() : "file";
 
     QHttpPart filePart;
     filePart.setHeader(QNetworkRequest::ContentTypeHeader, audioMime(audioFormat));
@@ -272,8 +275,8 @@ mu::Ret AudioComService::doUploadAudio(network::INetworkManagerPtr uploadManager
 
     QString token;
 
-    if (audioInfo.contains("extra")) {
-        QJsonObject extra = audioInfo.value("extra").toObject();
+    if (m_currentUploadingAudioInfo.contains("extra")) {
+        QJsonObject extra = m_currentUploadingAudioInfo.value("extra").toObject();
         m_currentUploadingAudioSlug = extra.value("audio").toObject().value("slug").toString();
         token = extra.value("token").toString();
     }
@@ -291,7 +294,7 @@ mu::Ret AudioComService::doUploadAudio(network::INetworkManagerPtr uploadManager
     if (!ret) {
         printServerReply(receivedData);
         notifyServerAboutFailUpload(fail, token);
-        ret = uploadingRetFromRawUploadingRet(ret);
+        ret = uploadingDownloadingRetFromRawRet(ret);
     } else {
         notifyServerAboutSuccessUpload(success, token);
     }
@@ -299,12 +302,10 @@ mu::Ret AudioComService::doUploadAudio(network::INetworkManagerPtr uploadManager
     return ret;
 }
 
-Ret AudioComService::doCreateAudio(const QString& title, int size, const QString& audioFormat, Visibility visibility,
-                                   QJsonObject& audioInfo)
+Ret AudioComService::doCreateAudio(network::INetworkManagerPtr manager, const QString& title, int size, const QString& audioFormat,
+                                   Visibility visibility)
 {
     TRACEFUNC;
-
-    INetworkManagerPtr manager = networkManagerCreator()->makeNetworkManager();
 
     QJsonObject json;
     QString mime = audioMime(audioFormat);
@@ -324,11 +325,11 @@ Ret AudioComService::doCreateAudio(const QString& title, int size, const QString
 
     if (!ret) {
         printServerReply(receivedData);
-        ret = uploadingRetFromRawUploadingRet(ret);
+        ret = uploadingDownloadingRetFromRawRet(ret);
         return ret;
     }
 
-    audioInfo = QJsonDocument::fromJson(receivedData.data()).object();
+    m_currentUploadingAudioInfo = QJsonDocument::fromJson(receivedData.data()).object();
 
     return ret;
 }

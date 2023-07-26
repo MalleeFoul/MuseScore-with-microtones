@@ -76,6 +76,7 @@ static const QMap<mu::engraving::ElementType, InspectorModelType> NOTATION_ELEME
     { mu::engraving::ElementType::HBOX, InspectorModelType::TYPE_HORIZONTAL_FRAME },// horizontal frame
     { mu::engraving::ElementType::ARTICULATION, InspectorModelType::TYPE_ARTICULATION },
     { mu::engraving::ElementType::ORNAMENT, InspectorModelType::TYPE_ORNAMENT },
+    { mu::engraving::ElementType::TRILL, InspectorModelType::TYPE_ORNAMENT },
     { mu::engraving::ElementType::TRILL_SEGMENT, InspectorModelType::TYPE_ORNAMENT },
     { mu::engraving::ElementType::IMAGE, InspectorModelType::TYPE_IMAGE },
     { mu::engraving::ElementType::HARMONY, InspectorModelType::TYPE_CHORD_SYMBOL },
@@ -120,19 +121,14 @@ AbstractInspectorModel::AbstractInspectorModel(QObject* parent, IElementReposito
         return;
     }
 
-    setupCurrentNotationChangedConnection();
-
     connect(m_repository->getQObject(), SIGNAL(elementsUpdated(const QList<mu::engraving::EngravingItem*>&)), this,
             SLOT(updateProperties()));
     connect(this, &AbstractInspectorModel::requestReloadPropertyItems, this, &AbstractInspectorModel::updateProperties);
 }
 
-void AbstractInspectorModel::setupCurrentNotationChangedConnection()
+void AbstractInspectorModel::init()
 {
     onCurrentNotationChanged();
-    currentNotationChanged().onNotify(this, [this]() {
-        onCurrentNotationChanged();
-    });
 }
 
 void AbstractInspectorModel::onCurrentNotationChanged()

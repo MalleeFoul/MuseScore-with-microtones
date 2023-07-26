@@ -46,19 +46,14 @@ using namespace mu::cloud;
 using namespace mu::network;
 using namespace mu::framework;
 
-static const QString ACCESS_TOKEN_KEY("access_token");
-static const QString REFRESH_TOKEN_KEY("refresh_token");
+const QString mu::cloud::ACCESS_TOKEN_KEY("access_token");
+const QString mu::cloud::REFRESH_TOKEN_KEY("refresh_token");
 
 static const std::string CLOUD_ACCESS_TOKEN_RESOURCE_NAME("CLOUD_ACCESS_TOKEN");
 
 static const std::string STATUS_KEY("status");
 
-static constexpr int USER_UNAUTHORIZED_STATUS_CODE = 401;
-static constexpr int FORBIDDEN_CODE = 403;
-static constexpr int NOT_FOUND_STATUS_CODE = 404;
-static constexpr int CONFLICT_STATUS_CODE = 409;
-
-static QString userAgent()
+QString mu::cloud::userAgent()
 {
     static const QStringList systemInfo {
         QSysInfo::kernelType(),
@@ -74,7 +69,7 @@ static QString userAgent()
            .arg(systemInfo.join(' ')).toLatin1();
 }
 
-static int generateFileNameNumber()
+int mu::cloud::generateFileNameNumber()
 {
     return QRandomGenerator::global()->generate() % 100000;
 }
@@ -365,9 +360,16 @@ Ret AbstractCloudService::executeRequest(const RequestCallback& requestCallback)
     return ret;
 }
 
-Ret AbstractCloudService::uploadingRetFromRawUploadingRet(const Ret& rawRet, bool isAlreadyUploaded) const
+Ret AbstractCloudService::uploadingDownloadingRetFromRawRet(const Ret& rawRet, bool isAlreadyUploaded) const
 {
+    if (rawRet) {
+        return rawRet; // OK
+    }
+
     int code = statusCode(rawRet);
+    if (!code) {
+        return rawRet;
+    }
 
     if (!isAlreadyUploaded && code == FORBIDDEN_CODE) {
         return make_ret(cloud::Err::AccountNotActivated);

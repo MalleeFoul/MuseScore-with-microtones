@@ -26,6 +26,7 @@ import QtQuick.Controls 2.15
 import MuseScore.Ui 1.0
 import MuseScore.UiComponents 1.0
 import MuseScore.NotationScene 1.0
+import MuseScore.Braille 1.0
 
 import "internal"
 
@@ -42,7 +43,7 @@ FocusScope {
 
     property alias defaultNavigationControl: fakeNavCtrl
 
-    property NavigationPanel navigationPanel: notationView.navigationPanel // first panel
+    property NavigationPanel navigationPanel: tabPanel.navigationPanel // first panel
 
     NavigationSection {
         id: navSec
@@ -73,7 +74,7 @@ FocusScope {
             Layout.fillWidth: true
 
             navigationPanel.section: navSec
-            navigationPanel.order: notationView.navigationPanel.order + 1
+            navigationPanel.order: 1
         }
 
         SeparatorLine { visible: tabPanel.visible }
@@ -99,7 +100,7 @@ FocusScope {
                         section: navSec
                         enabled: notationView.enabled && notationView.visible
                         direction: NavigationPanel.Both
-                        order: 1
+                        order: tabPanel.navigationPanel.order + 1
                     }
 
                     NavigationControl {
@@ -107,7 +108,7 @@ FocusScope {
                         name: "Score"
                         enabled: notationView.enabled && notationView.visible
 
-                        panel: navigationPanel
+                        panel: notationView.navigationPanel
                         order: 1
 
                         onActiveChanged: {
@@ -141,8 +142,8 @@ FocusScope {
                         contextMenuLoader.close()
                     }
 
-                    onShowElementPopupRequested: function (popupType, viewPos, elemSize) {
-                        popUpLoader.show(popupType, viewPos, elemSize)
+                    onShowElementPopupRequested: function (popupType, elementRect) {
+                        Qt.callLater(popUpLoader.show, popupType, elementRect)
                     }
 
                     onHideElementPopupRequested: {
@@ -159,16 +160,19 @@ FocusScope {
                         onHandleMenuItem: function(itemId) {
                             contextMenuModel.handleMenuItem(itemId)
                         }
+
+                        onOpened: paintView.onContextMenuIsOpenChanged(true)
+                        onClosed: paintView.onContextMenuIsOpenChanged(false)
                     }
 
                     ElementPopupLoader {
                         id: popUpLoader
 
-                        navigationSection: navSec
-                        navigationOrderStart: 2
+                        notationViewNavigationSection: navSec
+                        navigationOrderStart: notationView.navigationPanel.order + 1
 
-                        onOpened: paintView.setIsPopupOpen(true)
-                        onClosed: paintView.setIsPopupOpen(false)
+                        onOpened: paintView.onElementPopupIsOpenChanged(true)
+                        onClosed: paintView.onElementPopupIsOpenChanged(false)
                     }
                 }
             }
@@ -192,6 +196,17 @@ FocusScope {
                         notationNavigator.item.setCursorRect(viewport)
                     }
                 }
+            }
+
+            BrailleView {
+                id: brailleView
+
+                SplitView.fillWidth: true
+                SplitView.preferredHeight: 50
+                SplitView.minimumHeight: 30
+
+                navigationPanel.section: navSec
+                navigationPanel.order: popUpLoader.navigationOrderEnd + 1
             }
 
             Component {
@@ -248,7 +263,7 @@ FocusScope {
             Layout.fillWidth: true
 
             navigationPanel.section: navSec
-            navigationPanel.order: tabPanel.navigationPanel.order + 1
+            navigationOrderStart: brailleView.navigationPanel.order + 1
 
             onClosed: {
                 fakeNavCtrl.requestActive()

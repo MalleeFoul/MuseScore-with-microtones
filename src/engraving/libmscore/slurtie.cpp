@@ -50,10 +50,10 @@ SlurTieSegment::SlurTieSegment(const SlurTieSegment& b)
     : SpannerSegment(b)
 {
     for (int i = 0; i < int(Grip::GRIPS); ++i) {
-        _ups[i]   = b._ups[i];
-        _ups[i].p = PointF();
+        m_ups[i]   = b.m_ups[i];
+        m_ups[i].p = PointF();
     }
-    path = b.path;
+    m_path = b.m_path;
 }
 
 //---------------------------------------------------------
@@ -109,7 +109,7 @@ void SlurTieSegment::move(const PointF& s)
 {
     EngravingItem::move(s);
     for (int k = 0; k < int(Grip::GRIPS); ++k) {
-        _ups[k].p += s;
+        m_ups[k].p += s;
     }
 }
 
@@ -121,7 +121,7 @@ void SlurTieSegment::spatiumChanged(double oldValue, double newValue)
 {
     EngravingItem::spatiumChanged(oldValue, newValue);
     double diff = newValue / oldValue;
-    for (UP& u : _ups) {
+    for (UP& u : m_ups) {
         u.off *= diff;
     }
 }
@@ -137,7 +137,7 @@ std::vector<PointF> SlurTieSegment::gripsPositions(const EditData&) const
 
     const PointF p(pagePos());
     for (int i = 0; i < ngrips; ++i) {
-        grips[i] = _ups[i].p + _ups[i].off + p;
+        grips[i] = m_ups[i].p + m_ups[i].off + p;
     }
 
     return grips;
@@ -366,17 +366,17 @@ void SlurTieSegment::drawEditMode(mu::draw::Painter* p, EditData& ed, double /*c
 SlurTie::SlurTie(const ElementType& type, EngravingItem* parent)
     : Spanner(type, parent)
 {
-    _slurDirection = DirectionV::AUTO;
-    _up            = true;
-    _styleType     = SlurStyleType::Solid;
+    m_slurDirection = DirectionV::AUTO;
+    m_up            = true;
+    m_styleType     = SlurStyleType::Solid;
 }
 
 SlurTie::SlurTie(const SlurTie& t)
     : Spanner(t)
 {
-    _up            = t._up;
-    _slurDirection = t._slurDirection;
-    _styleType     = t._styleType;
+    m_up            = t.m_up;
+    m_slurDirection = t.m_slurDirection;
+    m_styleType     = t.m_styleType;
 }
 
 //---------------------------------------------------------
